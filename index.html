@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BIRDEYE - Network Intelligence</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/cytoscape@3.20.0/dist/cytoscape.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.70/pdfmake.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.70/vfs_fonts.js"></script>
+    <script src="https://unpkg.com/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            display: flex; height: 100vh; 
+            font-family: 'Segoe UI', sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            overflow: hidden; 
+        }
+
+        #leftSection { 
+            display: none; flex-direction: column; gap: 12px; padding: 20px; 
+            height: 100vh; width: 340px; position: fixed; top: 0; left: 0; 
+            background: rgba(255, 255, 255, 0.98); backdrop-filter: blur(10px); 
+            z-index: 1000; box-shadow: 4px 0 20px rgba(0, 0, 0, 0.15); 
+            overflow-y: auto; 
+        }
+        #leftSection.show { display: flex; }
+
+        #burgerButton { 
+            position: fixed; top: 20px; left: 20px; cursor: pointer; z-index: 1001; 
+            background: white; width: 45px; height: 45px; border-radius: 10px; 
+            display: flex; align-items: center; justify-content: center; 
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); font-size: 20px; 
+        }
+
+        .brand { 
+            font-size: 24px; font-weight: bold; text-align: center; margin-bottom: 2px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; 
+        }
+        .dev-credit { font-size: 11px; text-align: center; color: #764ba2; font-weight: 600; margin-bottom: 10px; }
+
+        .section-title { font-size: 10px; font-weight: 800; text-transform: uppercase; color: #999; letter-spacing: 0.5px; }
+        .divider { height: 1px; background: #eee; margin: 2px 0; }
+
+        #gridFilterContainer { 
+            height: 380px !important; min-height: 380px !important;
+            overflow-y: auto; background: #ffffff; padding: 8px; 
+            border-radius: 8px; border: 2px solid #667eea; 
+        }
+        
+        .grid-item { display: flex; align-items: center; gap: 10px; padding: 8px; font-size: 13px; border-bottom: 1px solid #f0f0f0; }
+        .grid-item:hover { background: #f0f4ff; }
+
+        select, input[type="text"] { padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; width: 100%; outline: none; }
+        
+        button { 
+            padding: 12px; border: none; border-radius: 6px; font-weight: 700; 
+            cursor: pointer; color: white; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            font-size: 11px; text-transform: uppercase;
+        }
+        #drawBtn { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); margin-top: 10px; }
+        #drawBtn:disabled { opacity: 0.3; }
+
+        #cy { flex-grow: 1; margin: 20px 20px 20px 80px; background: white; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
+        #status { font-size: 10px; text-align: center; font-weight: bold; color: #764ba2; padding-bottom: 5px; }
+    </style>
+</head>
+<body>
+
+    <div id="burgerButton" onclick="toggleLeftSection()">☰</div>
+
+    <div id="leftSection">
+        <div class="brand">🦅 BIRDEYE</div>
+        <div class="dev-credit">Developed by Eng. Mohamad Shaban</div>
+        <div id="status">Checking local files...</div>
+        
+        <div class="divider"></div>
+
+        <div class="section-title">1. Select Project</div>
+        <select id="projectList" onchange="onProjectSelect()">
+            <option disabled selected>Select a Project...</option>
+        </select>
+
+        <div class="divider"></div>
+
+        <div class="section-title">Filter by Grid</div>
+        <input type="text" id="gridSearchInput" placeholder="Search grids..." oninput="filterGridList()">
+        
+        <div style="display: flex; align-items: center; gap: 8px; padding: 5px 2px;">
+            <input type="checkbox" id="selectAllGrids" onclick="toggleSelectAll(this)">
+            <label for="selectAllGrids" style="font-size: 12px; font-weight: bold; color: #444;">Select All</label>
+        </div>
+        
+        <div id="gridFilterContainer">
+            <p id="emptyMsg" style="font-size: 11px; color: #aaa; text-align: center; margin-top: 40px;">Select project to load grids</p>
+        </div>
+
+        <div style="display: flex; gap: 5px; margin-top: 5px;">
+            <button onclick="applyFilter()" style="background:#4facfe; flex:1;">Apply</button>
+            <button onclick="resetFilter()" style="background:#ff4b2b; flex:1;">Reset</button>
+        </div>
+
+        <div class="divider"></div>
+        
+        <button id="drawBtn" onclick="drawGraph()" disabled>DRAW FL-SLD</button>
+
+        <div class="divider"></div>
+        <div class="section-title">Export Options</div>
+        <div style="display: flex; gap: 5px;">
+            <button onclick="exportPdf()" style="flex:1; background:#555;">PDF</button>
+            <button onclick="exportPng()" style="flex:1; background:#555;">PNG</button>
+        </div>
+    </div>
+
+    <div id="cy"></div>
+
+    <script>
+        let activeProjectData = { nodes: [], edges: [] };
+        let cy = null;
+        let selectedGrids = [];
+
+        function toggleLeftSection() {
+            const ls = document.getElementById('leftSection');
+            ls.style.display = (ls.style.display === 'flex' || ls.classList.contains('show')) ? 'none' : 'flex';
+            ls.classList.toggle('show');
+        }
+
+        // Initialize by loading projects.csv
+        window.onload = async () => {
+            const status = document.getElementById('status');
+            try {
+                const response = await fetch('projects.csv');
+                if(!response.ok) throw new Error("File not found");
+                const csvText = await response.text();
+                
+                const parsed = Papa.parse(csvText, { skipEmptyLines: true });
+                // Taking names from first column, starting row 2
+                const names = parsed.data.slice(1).map(row => row[0]);
+
+                const list = document.getElementById('projectList');
+                list.innerHTML = '<option value="" disabled selected>Select a Project...</option>';
+                
+                names.forEach(name => {
+                    if(name) list.add(new Option(name, name));
+                });
+
+                status.innerText = "Local Files Connected ✅";
+            } catch (err) {
+                status.innerText = "Error: Run a local server ❌";
+                console.error("Fetch Error:", err);
+            }
+        };
+
+        async function onProjectSelect() {
+            const pName = document.getElementById('projectList').value;
+            const status = document.getElementById('status');
+            status.innerText = `Loading ${pName}...`;
+
+            try {
+                // Fetch using your naming convention: projectname + nodes/edges
+                const [nRes, eRes] = await Promise.all([
+                    fetch(`${pName}nodes.csv`),
+                    fetch(`${pName}edges.csv`)
+                ]);
+
+                if(!nRes.ok || !eRes.ok) throw new Error("Nodes or Edges file missing");
+
+                const nText = await nRes.text();
+                const eText = await eRes.text();
+
+                activeProjectData.nodes = Papa.parse(nText, { skipEmptyLines: true }).data;
+                activeProjectData.edges = Papa.parse(eText, { skipEmptyLines: true }).data;
+
+                renderGridFilters();
+                document.getElementById('drawBtn').disabled = false;
+                status.innerText = `${pName} Ready ✅`;
+            } catch (err) {
+                status.innerText = "File mismatch (Check names) ❌";
+                console.error(err);
+            }
+        }
+
+        function renderGridFilters() {
+            const container = document.getElementById('gridFilterContainer');
+            container.innerHTML = '';
+            const gridSet = new Set();
+
+            // Grid column is the 5th one (index 4)
+            activeProjectData.nodes.slice(1).forEach(row => {
+                if (row[4]) gridSet.add(row[4].toString().trim());
+            });
+
+            gridSet.forEach(grid => {
+                const div = document.createElement('div');
+                div.className = 'grid-item';
+                div.innerHTML = `<input type="checkbox" class="grid-chk" value="${grid}"> <span class="grid-name-label">${grid}</span>`;
+                container.appendChild(div);
+            });
+        }
+
+        function filterGridList() {
+            const val = document.getElementById('gridSearchInput').value.toLowerCase();
+            document.querySelectorAll('.grid-item').forEach(item => {
+                const text = item.querySelector('.grid-name-label').innerText.toLowerCase();
+                item.style.display = text.includes(val) ? 'flex' : 'none';
+            });
+        }
+
+        function toggleSelectAll(source) {
+            document.querySelectorAll('.grid-chk').forEach(cb => {
+                if (cb.parentElement.style.display !== 'none') cb.checked = source.checked;
+            });
+        }
+
+        function applyFilter() {
+            selectedGrids = Array.from(document.querySelectorAll('.grid-chk:checked')).map(c => c.value);
+            alert(selectedGrids.length > 0 ? `Filtering ${selectedGrids.length} Grids` : "All Grids Selected");
+        }
+
+        function resetFilter() {
+            selectedGrids = [];
+            document.querySelectorAll('.grid-chk').forEach(c => c.checked = false);
+            document.getElementById('selectAllGrids').checked = false;
+            document.getElementById('gridSearchInput').value = '';
+            filterGridList();
+        }
+
+        function drawGraph() {
+            if (!activeProjectData.nodes.length) return;
+
+            // Format data for Cytoscape
+            const allNodes = activeProjectData.nodes.slice(1).map(row => ({
+                data: { id: row[0], label: row[1], shape: row[2].toLowerCase(), color: row[3], grid: row[4] }
+            }));
+
+            const allEdges = activeProjectData.edges.slice(1).map(row => ({
+                data: { id: row[0], source: row[1], target: row[2] }
+            }));
+
+            let fn = allNodes, fe = allEdges;
+
+            if (selectedGrids.length > 0) {
+                const primaryIds = new Set(allNodes.filter(n => selectedGrids.includes(n.data.grid)).map(n => n.data.id));
+                const linkedIds = new Set();
+                allEdges.forEach(e => {
+                    if (primaryIds.has(e.data.source)) linkedIds.add(e.data.target);
+                    if (primaryIds.has(e.data.target)) linkedIds.add(e.data.source);
+                });
+                const combinedIds = new Set([...primaryIds, ...linkedIds]);
+                fn = allNodes.filter(n => combinedIds.has(n.data.id));
+                fe = allEdges.filter(e => combinedIds.has(e.data.source) && combinedIds.has(e.data.target));
+            }
+
+            cy = cytoscape({
+                container: document.getElementById('cy'),
+                elements: { nodes: fn, edges: fe },
+                style: [
+                    {
+                        selector: 'node',
+                        style: {
+                            'background-color': 'data(color)',
+                            'label': 'data(label)',
+                            'shape': 'data(shape)',
+                            'width': 35, 'height': 35,
+                            'text-valign': 'center', 'font-size': 8, 'color': '#000',
+                            'text-outline-width': 1, 'text-outline-color': '#fff'
+                        }
+                    },
+                    {
+                        selector: 'edge',
+                        style: { 'width': 2, 'line-color': '#999', 'curve-style': 'bezier', 'target-arrow-shape': 'triangle' }
+                    }
+                ],
+                layout: { name: 'cose', padding: 30, animate: true }
+            });
+        }
+
+        function exportPng() { if(cy) saveAs(cy.png({ full: true, scale: 2 }), 'Network_Export.png'); }
+        function exportPdf() { if(cy) pdfMake.createPdf({ content: [{ image: cy.png({ full: true, scale: 1.5 }), width: 500 }] }).download('SLD_Report.pdf'); }
+    </script>
+</body>
+</html>
