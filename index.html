@@ -1,0 +1,634 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>BIRDEYE - Network Intelligence</title>
+
+  <!-- Correct external libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/cytoscape@3.20.0/dist/cytoscape.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.70/pdfmake.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.70/vfs_fonts.js"></script>
+  <script src="https://unpkg.com/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      display: flex; height: 100vh;
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      overflow: hidden;
+    }
+
+    /* Side Panel */
+    #leftSection {
+      display: none; flex-direction: column; gap: 12px; padding: 20px;
+      height: 100vh; width: 360px; position: fixed; top: 0; left: 0;
+      background: rgba(255, 255, 255, 0.98); backdrop-filter: blur(10px);
+      z-index: 1000; box-shadow: 4px 0 20px rgba(0, 0, 0, 0.15);
+      overflow-y: auto;
+    }
+    #leftSection.show { display: flex; }
+
+    #burgerButton {
+      position: fixed; top: 20px; left: 20px; cursor: pointer;
+      z-index: 2000;  /* higher than the panel and canvas */
+      background: white; width: 45px; height: 45px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); font-size: 20px;
+      pointer-events: auto;
+      user-select: none;
+    }
+
+    .brand {
+      font-size: 24px; font-weight: bold; text-align: center; margin-bottom: 2px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .dev-credit { font-size: 11px; text-align: center; color: #764ba2; font-weight: 600; margin-bottom: 10px; }
+
+    .panel-section {
+      background: #ffffff; border: 2px solid #eef0ff; border-radius: 10px; padding: 12px;
+    }
+    .section-title {
+      font-size: 11px; font-weight: 800; text-transform: uppercase;
+      color: #666; letter-spacing: 0.5px; margin-bottom: 8px;
+    }
+    .divider { height: 1px; background: #eee; margin: 10px 0; }
+
+    select, input[type="text"] {
+      padding: 10px; border: 1px solid #ddd; border-radius: 6px;
+      font-size: 13px; width: 100%; outline: none; background: #fff;
+    }
+    button {
+      padding: 12px; border: none; border-radius: 6px; font-weight: 700;
+      cursor: pointer; color: white; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      font-size: 11px; text-transform: uppercase;
+    }
+    #drawBtn { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); }
+    #drawBtn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+    .btn-row { display: flex; gap: 8px; }
+    .btn-outline { background: #555; }
+    .btn-danger { background: #ff4b2b; }
+    .btn-info { background: #4facfe; }
+
+    /* Grid filter list */
+    #gridFilterContainer {
+      height: 300px !important; min-height: 300px !important;
+      overflow-y: auto; background: #ffffff; padding: 8px;
+      border-radius: 8px; border: 2px solid #667eea;
+    }
+    .grid-item { display: flex; align-items: center; gap: 10px; padding: 8px; font-size: 13px; border-bottom: 1px solid #f0f0f0; }
+    .grid-item:hover { background: #f0f4ff; }
+
+    #status { font-size: 10px; text-align: center; font-weight: bold; color: #764ba2; padding-bottom: 5px; }
+
+    /* Graph */
+    #cy { flex-grow: 1; margin: 20px 20px 20px 80px; background: white; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); position: relative; z-index: 1; }
+  </style>
+</head>
+<body>
+
+  <div id="burgerButton" onclick="toggleLeftSection()">☰</div>
+
+  <div id="leftSection">
+    <div class="brand">🦅 BIRDEYE</div>
+    <div class="dev-credit">Developed by Eng. Mohamad Shaban</div>
+    <div id="status">Preparing…</div>
+
+    <!-- SECTION: Project & Preload Status -->
+    <div class="panel-section">
+      <div class="section-title">1) Project Selection</div>
+      <select id="projectList" onchange="onProjectSelect()">
+        <option disabled selected>Select a Project...</option>
+      </select>
+      <div class="divider"></div>
+      <div id="preloadStatus" style="font-size:12px; color:#666;">Waiting to preload CSVs…</div>
+    </div>
+
+    <!-- SECTION: Grid Filter -->
+    <div class="panel-section">
+      <div class="section-title">2) Filter by Grid</div>
+
+      <input type="text" id="gridSearchInput" placeholder="Search grids..." oninput="filterGridList()">
+
+      <div style="display:flex; align-items:center; gap:8px; padding:6px 0;">
+        <input type="checkbox" id="selectAllGrids" onclick="toggleSelectAll(this)">
+        <label for="selectAllGrids" style="font-size:12px; font-weight: bold; color:#444;">Select All (visible)</label>
+      </div>
+
+      <div id="gridFilterContainer">
+        <p id="emptyMsg" style="font-size: 11px; color: #aaa; text-align: center; margin-top: 40px;">
+          Preloading… or select project to load grids
+        </p>
+      </div>
+
+      <div class="btn-row" style="margin-top:8px;">
+        <button onclick="applyFilter()" class="btn-info" style="flex:1;">Apply</button>
+        <button onclick="resetFilter()" class="btn-danger" style="flex:1;">Reset</button>
+      </div>
+    </div>
+
+    <!-- SECTION: Feeder Search -->
+    <div class="panel-section">
+      <div class="section-title">3) Feeder Search</div>
+      <label for="gridForFeederSearch" style="font-size:12px; color:#444;">Select Grid</label>
+      <select id="gridForFeederSearch" onchange="populateFeederList()">
+        <option value="" selected disabled>Choose grid…</option>
+      </select>
+
+      <div style="height:8px;"></div>
+
+      <label for="feederList" style="font-size:12px; color:#444;">Select Feeder (Node)</label>
+      <select id="feederList">
+        <option value="" selected disabled>Choose feeder…</option>
+      </select>
+
+      <div class="btn-row" style="margin-top:8px;">
+        <button onclick="searchFeeder()">Search & Highlight</button>
+      </div>
+
+      <div style="margin-top:6px; font-size:11px; color:#777;">
+        Tip: Feeder options are populated from node <b>labels</b> within the selected grid.
+      </div>
+    </div>
+
+    <!-- SECTION: Graph Actions -->
+    <div class="panel-section">
+      <div class="section-title">4) Graph Actions</div>
+      <button id="drawBtn" onclick="drawGraph()" disabled>DRAW FL-SLD</button>
+
+      <div class="divider"></div>
+
+      <label for="layoutSelect" style="font-size:12px; color:#444;">Layout</label>
+      <select id="layoutSelect">
+        <option value="cose" selected>cose (force-directed)</option>
+        <option value="grid">grid</option>
+        <option value="circle">circle</option>
+        <option value="concentric">concentric</option>
+        <option value="breadthfirst">breadthfirst</option>
+        <option value="random">random</option>
+      </select>
+      <div class="btn-row" style="margin-top:8px;">
+        <button onclick="applyLayout()">Apply Layout</button>
+      </div>
+    </div>
+
+    <!-- SECTION: Export -->
+    <div class="panel-section">
+      <div class="section-title">5) Export</div>
+      <div class="btn-row">
+        <button onclick="exportPdf()" class="btn-outline" style="flex:1;">PDF</button>
+        <button onclick="exportPng()" class="btn-outline" style="flex:1;">PNG</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="cy"></div>
+
+  <script>
+    /**********************
+     * Global State
+     **********************/
+    let cy = null;
+    let selectedGrids = [];
+
+    let activeProjectName = '';
+    let activeProjectData = { nodes: [], edges: [] };
+
+    // Preloaded cache: projectName -> { nodes: Array<Array>, edges: Array<Array> }
+    const projectDataCache = Object.create(null);
+
+    /**********************
+     * UI Helpers
+     **********************/
+    function toggleLeftSection() {
+      const ls = document.getElementById('leftSection');
+      const showing = (ls.style.display === 'flex' || ls.classList.contains('show'));
+      ls.style.display = showing ? 'none' : 'flex';
+      ls.classList.toggle('show', !showing);
+    }
+
+    function setStatus(msg) {
+      document.getElementById('status').innerText = msg;
+    }
+
+    // Defensive: if inline onclick is blocked by CSP, this still works
+    window.addEventListener('DOMContentLoaded', () => {
+      const burger = document.getElementById('burgerButton');
+      if (burger) burger.addEventListener('click', toggleLeftSection);
+    });
+
+    /**********************
+     * CSV Helpers
+     **********************/
+    async function fetchTextOrThrow(path) {
+      const res = await fetch(path);
+      if (!res.ok) throw new Error(`Failed to fetch ${path}`);
+      return await res.text();
+    }
+
+    function parseCSVToArray(csvText) {
+      return Papa.parse(csvText, { skipEmptyLines: true }).data;
+    }
+
+    /**********************
+     * Styling & Layout Helpers
+     **********************/
+    function getBaseStyle() {
+      return [
+        {
+          selector: 'node',
+          style: {
+            'background-color': 'data(color)',
+            'label': 'data(label)',
+            'shape': 'data(shape)',
+            'width': 35, 'height': 35,
+            'text-valign': 'center',
+            'font-size': 8, 'color': '#000',
+            'text-outline-width': 1, 'text-outline-color': '#fff',
+            'border-width': 1, 'border-color': '#333'
+          }
+        },
+        {
+          selector: 'edge',
+          style: {
+            'width': 2,
+            'line-color': '#999',
+            'curve-style': 'bezier'
+            // Undirected → no arrowheads
+          }
+        },
+        {
+          selector: 'node.cy-highlighted',
+          style: {
+            'border-width': 6,
+            'border-color': '#FFD700'
+          }
+        }
+      ];
+    }
+
+    function getLayoutConfig() {
+      const layoutName = document.getElementById('layoutSelect')?.value || 'cose';
+      return { name: layoutName, padding: 30, animate: true };
+    }
+
+    /**********************
+     * INITIAL LOAD
+     * - Load projects.csv
+     * - Preload all nodes/edges CSVs into memory
+     **********************/
+    window.onload = async () => {
+      setStatus('Checking local files...');
+      const preloadStatus = document.getElementById('preloadStatus');
+      const projectList = document.getElementById('projectList');
+
+      try {
+        // Load projects.csv to get the list of projects
+        const projectsCSV = await fetchTextOrThrow('projects.csv');
+        const parsed = parseCSVToArray(projectsCSV);
+        const projectNames = parsed.slice(1) // skip header
+          .map(row => row[0])
+          .filter(Boolean);
+
+        // Populate dropdown immediately
+        projectList.innerHTML = '<option value="" disabled selected>Select a Project...</option>';
+        projectNames.forEach(name => projectList.add(new Option(name, name)));
+
+        setStatus('Local Files Connected ✅');
+        preloadStatus.innerText = `Preloading ${projectNames.length} project(s)...`;
+
+        // Preload all projects into memory
+        let loaded = 0;
+        for (const pName of projectNames) {
+          try {
+            const [nText, eText] = await Promise.all([
+              fetchTextOrThrow(`${pName}nodes.csv`),
+              fetchTextOrThrow(`${pName}edges.csv`)
+            ]);
+            projectDataCache[pName] = {
+              nodes: parseCSVToArray(nText),
+              edges: parseCSVToArray(eText)
+            };
+            loaded++;
+            preloadStatus.innerText = `Preloaded ${loaded}/${projectNames.length}: "${pName}" ✅`;
+          } catch (innerErr) {
+            console.error(`Preload error for project "${pName}":`, innerErr);
+            projectDataCache[pName] = { nodes: [], edges: [] };
+            preloadStatus.innerText = `Preloaded ${loaded}/${projectNames.length} (some projects missing files) ⚠️`;
+          }
+        }
+
+        preloadStatus.innerText = `Preloading complete. Ready ✅`;
+      } catch (err) {
+        console.error('Fetch Error:', err);
+        setStatus('Error: Run a local server ❌');
+        preloadStatus.innerText = `Preloading failed. Ensure "projects.csv" and project CSVs exist.`;
+      }
+    };
+
+    /**********************
+     * PROJECT SELECTION
+     **********************/
+    function onProjectSelect() {
+      const pName = document.getElementById('projectList').value;
+      activeProjectName = pName;
+
+      const cached = projectDataCache[pName];
+      if (!cached || !cached.nodes?.length || !cached.edges?.length) {
+        setStatus('File mismatch (Check names) ❌');
+        return;
+      }
+
+      activeProjectData.nodes = cached.nodes;
+      activeProjectData.edges = cached.edges;
+
+      renderGridFilters();
+      fillGridForFeederSearchSelect();
+
+      document.getElementById('drawBtn').disabled = false;
+      setStatus(`${pName} Ready (loaded from memory) ✅`);
+    }
+
+    /**********************
+     * GRID FILTERS (checkbox list + apply/reset)
+     **********************/
+    function renderGridFilters() {
+      const container = document.getElementById('gridFilterContainer');
+      container.innerHTML = '';
+      const gridSet = new Set();
+
+      if (!activeProjectData.nodes?.length) {
+        container.innerHTML = '<p style="font-size: 11px; color: #aaa; text-align: center; margin-top: 40px;">Select a project to load grids</p>';
+        return;
+      }
+
+      // Grid column is the 5th one (index 4)
+      activeProjectData.nodes.slice(1).forEach(row => {
+        if (row[4]) gridSet.add(row[4].toString().trim());
+      });
+
+      if (gridSet.size === 0) {
+        container.innerHTML = '<p style="font-size: 11px; color: #aaa; text-align: center; margin-top: 40px;">No grids found in nodes CSV (column index 4)</p>';
+        return;
+      }
+
+      [...gridSet].sort().forEach(grid => {
+        const div = document.createElement('div');
+        div.className = 'grid-item';
+        div.innerHTML = `
+          <input type="checkbox" class="grid-chk" value="${grid}">
+          <span class="grid-name-label">${grid}</span>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    function filterGridList() {
+      const val = document.getElementById('gridSearchInput').value.toLowerCase();
+      document.querySelectorAll('.grid-item').forEach(item => {
+        const text = item.querySelector('.grid-name-label').innerText.toLowerCase();
+        item.style.display = text.includes(val) ? 'flex' : 'none';
+      });
+    }
+
+    function toggleSelectAll(source) {
+      document.querySelectorAll('.grid-chk').forEach(cb => {
+        if (cb.parentElement.style.display !== 'none') cb.checked = source.checked;
+      });
+    }
+
+    function applyFilter() {
+      selectedGrids = Array.from(document.querySelectorAll('.grid-chk:checked')).map(c => c.value);
+      alert(selectedGrids.length > 0 ? `Filtering ${selectedGrids.length} Grids` : "All Grids Selected");
+    }
+
+    function resetFilter() {
+      selectedGrids = [];
+      document.querySelectorAll('.grid-chk').forEach(c => c.checked = false);
+      document.getElementById('selectAllGrids').checked = false;
+      document.getElementById('gridSearchInput').value = '';
+      filterGridList();
+    }
+
+    /**********************
+     * FEEDER SEARCH (Grid -> Feeder (node label))
+     * - IGNORES CURRENT GRID FILTER:
+     *   Ensures full graph (all nodes/edges) is rendered before highlighting.
+     **********************/
+    function fillGridForFeederSearchSelect() {
+      const gridSelect = document.getElementById('gridForFeederSearch');
+      gridSelect.innerHTML = '<option value="" selected disabled>Choose grid…</option>';
+
+      const gridSet = new Set();
+      activeProjectData.nodes.slice(1).forEach(row => {
+        if (row[4]) gridSet.add(row[4].toString().trim());
+      });
+
+      [...gridSet].sort().forEach(g => gridSelect.add(new Option(g, g)));
+
+      // reset feeder list as well
+      const feederSelect = document.getElementById('feederList');
+      feederSelect.innerHTML = '<option value="" selected disabled>Choose feeder…</option>';
+    }
+
+    function populateFeederList() {
+      const feederSelect = document.getElementById('feederList');
+      feederSelect.innerHTML = '<option value="" selected disabled>Choose feeder…</option>';
+
+      const gridSel = document.getElementById('gridForFeederSearch').value;
+      if (!gridSel) return;
+
+      // From selected grid, collect node labels as "feeders"
+      const rows = activeProjectData.nodes.slice(1);
+      const options = [];
+      const seenIds = new Set();
+
+      rows.forEach(row => {
+        const [id, label, shape, color, grid] = row;
+        if (!id || !label) return;
+        if ((grid || '').toString().trim() === gridSel && !seenIds.has(id)) {
+          seenIds.add(id);
+          options.push({ id, label });
+        }
+      });
+
+      options.sort((a, b) => a.label.localeCompare(b.label));
+      options.forEach(opt => feederSelect.add(new Option(opt.label, opt.id)));
+    }
+
+    function buildAllElementsFromActiveProject() {
+      const allNodes = activeProjectData.nodes.slice(1).map(row => ({
+        data: {
+          id: row[0],
+          label: row[1],
+          shape: (row[2] || 'ellipse').toLowerCase(),
+          color: row[3] || '#8faadc',
+          grid: row[4] || ''
+        }
+      }));
+      const allEdges = activeProjectData.edges.slice(1).map(row => ({
+        data: { id: row[0], source: row[1], target: row[2] }
+      }));
+      return { nodes: allNodes, edges: allEdges };
+    }
+
+    function ensureFullGraphRendered() {
+      // Render ALL nodes & edges (ignore any selectedGrids)
+      const { nodes, edges } = buildAllElementsFromActiveProject();
+      const style = getBaseStyle();
+      const layoutCfg = getLayoutConfig();
+
+      if (!cy) {
+        cy = cytoscape({
+          container: document.getElementById('cy'),
+          elements: { nodes, edges },
+          style,
+          layout: layoutCfg
+        });
+      } else {
+        cy.stop();
+        cy.elements().remove();
+        cy.style().fromJson(style).update();
+        cy.add([...nodes, ...edges]);
+        cy.layout(layoutCfg).run();
+      }
+    }
+
+    function searchFeeder() {
+      if (!activeProjectData.nodes?.length) {
+        alert('Please select a project first.');
+        return;
+      }
+
+      const feederSelect = document.getElementById('feederList');
+      const nodeId = feederSelect.value;
+      if (!nodeId) {
+        alert('Select a feeder to search.');
+        return;
+      }
+
+      // 1) Ensure FULL GRAPH is rendered (ignore filters)
+      ensureFullGraphRendered();
+
+      // 2) Find node by id and focus
+      const safeId = (window.CSS && CSS.escape) ? CSS.escape(nodeId) : nodeId.replace(/"/g, '\\"');
+      const node = cy.$(`node[id="${safeId}"]`);
+      if (!node || node.length === 0) {
+        alert('Feeder node not found in the dataset.');
+        return;
+      }
+
+      // Center + Zoom
+      cy.animate({
+        center: { eles: node },
+        zoom: Math.min(2, cy.maxZoom() || 2)
+      }, { duration: 600 });
+
+      // Flicker 3 times with class-based styling
+      flickerNode(node, 3);
+    }
+
+    function flickerNode(ele, times = 3) {
+      let count = 0;
+      const interval = setInterval(() => {
+        ele.toggleClass('cy-highlighted');
+        count++;
+        if (count >= times * 2) {
+          clearInterval(interval);
+          ele.removeClass('cy-highlighted');
+        }
+      }, 250);
+    }
+
+    /**********************
+     * DRAW GRAPH
+     * - Keeps original behavior: uses selectedGrids + 1-hop neighbors
+     * - Undirected edges
+     **********************/
+    function drawGraph() {
+      if (!activeProjectData.nodes.length) return;
+
+      // ALL nodes/edges
+      const { nodes: allNodes, edges: allEdges } = buildAllElementsFromActiveProject();
+
+      let fn = allNodes, fe = allEdges;
+
+      // Apply grid filter: selected grids + 1-hop neighbors (same as original)
+      if (selectedGrids.length > 0) {
+        const primaryIds = new Set(allNodes
+          .filter(n => selectedGrids.includes(n.data.grid))
+          .map(n => n.data.id));
+
+        const linkedIds = new Set();
+        allEdges.forEach(e => {
+          if (primaryIds.has(e.data.source)) linkedIds.add(e.data.target);
+          if (primaryIds.has(e.data.target)) linkedIds.add(e.data.source);
+        });
+
+        const combinedIds = new Set([...primaryIds, ...linkedIds]);
+        fn = allNodes.filter(n => combinedIds.has(n.data.id));
+        fe = allEdges.filter(e => combinedIds.has(e.data.source) && combinedIds.has(e.data.target));
+      }
+
+      const style = getBaseStyle();
+      const layoutCfg = getLayoutConfig();
+
+      if (!cy) {
+        cy = cytoscape({
+          container: document.getElementById('cy'),
+          elements: { nodes: fn, edges: fe },
+          style: style,
+          layout: layoutCfg
+        });
+      } else {
+        cy.stop();
+        cy.elements().remove();
+        cy.style().fromJson(style).update();
+        cy.add([...fn, ...fe]);
+        cy.layout(layoutCfg).run();
+      }
+    }
+
+    function applyLayout() {
+      if (!cy) {
+        alert('Please draw the graph first.');
+        return;
+      }
+      cy.layout(getLayoutConfig()).run();
+    }
+
+    /**********************
+     * EXPORT
+     **********************/
+    function dataURItoBlob(dataURI) {
+      const parts = dataURI.split(',');
+      const mime = parts[0].match(/:(.*?);/)[1];
+      const byteString = atob(parts[1]);
+      const ab = new ArrayBuffer(byteString.length);
+      const ia = new Uint8Array(ab);
+      for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
+      return new Blob([ab], { type: mime });
+    }
+
+    function exportPng() {
+      if (!cy) return;
+      const dataUrl = cy.png({ full: true, scale: 2 });
+      const blob = dataURItoBlob(dataUrl);
+      saveAs(blob, 'Network_Export.png');
+    }
+
+    function exportPdf() {
+      if (!cy) return;
+      const dataUrl = cy.png({ full: true, scale: 1.5 });
+      pdfMake.createPdf({
+        content: [{ image: dataUrl, width: 500 }]
+      }).download('SLD_Report.pdf');
+    }
+  </script>
+</body>
+</html>
