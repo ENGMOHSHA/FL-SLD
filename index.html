@@ -1,0 +1,724 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>BIRDEYE - Network Intelligence</title>
+
+  <!-- External libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/cytoscape@3.20.0/dist/cytoscape.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.70/pdfmake.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.70/vfs_fonts.js"></script>
+  <script src="https://unpkg.com/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      display: flex; height: 100vh;
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      overflow: hidden;
+    }
+
+    /* Side Panel */
+    #leftSection {
+      display: none; flex-direction: column; gap: 12px; padding: 20px;
+      height: 100vh; width: 360px; position: fixed; top: 0; left: 0;
+      background: rgba(255, 255, 255, 0.98); backdrop-filter: blur(10px);
+      z-index: 1000; box-shadow: 4px 0 20px rgba(0, 0, 0, 0.15);
+      overflow-y: auto;
+    }
+    #leftSection.show { display: flex; }
+
+    #burgerButton {
+      position: fixed; top: 20px; left: 20px; cursor: pointer;
+      z-index: 2000;  /* above panel and canvas */
+      background: white; width: 45px; height: 45px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); font-size: 20px;
+      pointer-events: auto; user-select: none;
+    }
+
+    .brand {
+      font-size: 24px; font-weight: bold; text-align: center; margin-bottom: 2px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .dev-credit { font-size: 11px; text-align: center; color: #764ba2; font-weight: 600; margin-bottom: 10px; }
+
+    .panel-section { background: #ffffff; border: 2px solid #eef0ff; border-radius: 10px; padding: 12px; }
+    .section-title { font-size: 11px; font-weight: 800; text-transform: uppercase; color: #666; letter-spacing: 0.5px; margin-bottom: 8px; }
+    .divider { height: 1px; background: #eee; margin: 10px 0; }
+
+    select, input[type="text"] {
+      padding: 10px; border: 1px solid #ddd; border-radius: 6px;
+      font-size: 13px; width: 100%; outline: none; background: #fff;
+    }
+    button {
+      padding: 12px; border: none; border-radius: 6px; font-weight: 700;
+      cursor: pointer; color: white; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      font-size: 11px; text-transform: uppercase;
+    }
+    #drawBtn { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); }
+    #drawBtn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+    .btn-row { display: flex; gap: 8px; }
+    .btn-outline { background: #555; }
+    .btn-danger { background: #ff4b2b; }
+    .btn-info { background: #4facfe; }
+
+    #gridFilterContainer {
+      height: 250px; min-height: 250px;
+      overflow-y: auto; background: #ffffff; padding: 8px;
+      border-radius: 8px; border: 2px solid #667eea;
+    }
+    .grid-item { display: flex; align-items: center; gap: 10px; padding: 8px; font-size: 13px; border-bottom: 1px solid #f0f0f0; }
+    .grid-item:hover { background: #f0f4ff; }
+
+    #status { font-size: 10px; text-align: center; font-weight: bold; color: #764ba2; padding-bottom: 5px; }
+
+    #cy {
+      flex-grow: 1; margin: 20px 20px 20px 80px; background: white;
+      border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+      position: relative; z-index: 1;
+    }
+
+    /* ------- Tooltip (Added) ------- */
+    #tooltip {
+      position: fixed; /* anchored to viewport */
+      display: none;
+      max-width: 260px;
+      background: rgba(0,0,0,0.85);
+      color: #fff;
+      padding: 8px 10px;
+      border-radius: 8px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+      font-size: 12px;
+      line-height: 1.35;
+      z-index: 3000; /* above panel and canvas */
+      pointer-events: none; /* don't block clicks */
+      white-space: pre-line; /* show each field on its own line */
+    }
+  </style>
+</head>
+<body>
+
+  <div id="burgerButton">☰</div>
+
+  <div id="leftSection">
+    <div class="brand">🦅 BIRDEYE</div>
+    <div class="dev-credit">Developed by Eng. Mohamad Shaban</div>
+    <div id="status">Preparing…</div>
+
+    <!-- 1) Project Selection -->
+    <div class="panel-section">
+      <div class="section-title">1) Project Selection</div>
+      <select id="projectList">
+        <option disabled selected>Select a Project...</option>
+      </select>
+      <div class="divider"></div>
+      <div id="preloadStatus" style="font-size:12px; color:#666;"></div>
+    </div>
+
+    <!-- 2) Filter by Grid -->
+    <div class="panel-section">
+      <div class="section-title">2) Filter by Grid Station</div>
+      <input type="text" id="gridSearchInput" placeholder="Search grids...">
+      <div style="display:flex; align-items:center; gap:8px; padding:6px 0;">
+        <input type="checkbox" id="selectAllGrids">
+        <label for="selectAllGrids" style="font-size:12px; font-weight: bold; color:#444;">Select All (visible)</label>
+      </div>
+      <div id="gridFilterContainer">
+        <p id="emptyMsg" style="font-size:11px; color:#aaa; text-align:center; margin-top:40px;">
+          select project to load grids
+        </p>
+      </div>
+      <div class="btn-row" style="margin-top:8px;">
+        <button id="applyFilterBtn" class="btn-info" style="flex:1;">Apply</button>
+        <button id="resetFilterBtn" class="btn-danger" style="flex:1;">Reset</button>
+      </div>
+    </div>
+
+    <!-- 3) Feeder Search -->
+    <div class="panel-section">
+      <div class="section-title">3) Feeder Search</div>
+      <label for="gridForFeederSearch" style="font-size:12px; color:#444;">Select Grid Station</label>
+      <select id="gridForFeederSearch">
+        <option value="" selected disabled>Choose grid…</option>
+      </select>
+
+      <div style="height:8px;"></div>
+
+      <label for="feederList" style="font-size:12px; color:#444;">Select Feeder</label>
+      <select id="feederList">
+        <option value="" selected disabled>Choose feeder…</option>
+      </select>
+
+      <div class="btn-row" style="margin-top:8px;">
+        <button id="searchFeederBtn">Search & Highlight</button>
+      </div>
+
+      <div style="margin-top:6px; font-size:11px; color:#777;">
+   
+      </div>
+    </div>
+
+    <!-- 4) Graph Actions -->
+    <div class="panel-section">
+      <div class="section-title">4) Graph Actions</div>
+      <button id="drawBtn" disabled>DRAW FL-SLD</button>
+    </div>
+
+    <!-- 5) Export -->
+    <div class="panel-section">
+      <div class="section-title">5) Export</div>
+      <div class="btn-row">
+        <button id="exportPdfBtn" class="btn-outline" style="flex:1;">PDF</button>
+        <button id="exportPngBtn" class="btn-outline" style="flex:1;">PNG</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="cy"></div>
+
+  <!-- Tooltip container (Added) -->
+  <div id="tooltip"></div>
+
+  <!-- SCRIPT 1: Burger only (runs even if main app fails) -->
+  <script>
+    (function(){
+      function toggleLeftSection(){
+        var ls = document.getElementById('leftSection');
+        var showing = (ls.style.display === 'flex' || ls.classList.contains('show'));
+        ls.style.display = showing ? 'none' : 'flex';
+        if (!showing) { ls.classList.add('show'); } else { ls.classList.remove('show'); }
+      }
+      window.toggleLeftSection = toggleLeftSection; // expose for inline/fallback
+      document.addEventListener('DOMContentLoaded', function(){
+        var burger = document.getElementById('burgerButton');
+        if (burger) { burger.addEventListener('click', toggleLeftSection); }
+      });
+    })();
+  </script>
+
+  <!-- SCRIPT 2: Main app (ES5-friendly) -->
+  <script>
+    /* -----------------------------
+     * Global state & constants
+     * ---------------------------*/
+    var cy = null;
+    var selectedGrids = [];
+    var activeProjectName = '';
+    var activeProjectData = { nodes: [], edges: [] };
+    var projectDataCache = {}; // name -> {nodes:Array, edges:Array}
+
+    var DEFAULT_LAYOUT = { name: 'cose', padding: 30, animate: true };
+
+    /* -----------------------------
+     * Utilities
+     * ---------------------------*/
+    function norm(v){ return (v == null ? '' : (''+v)).replace(/\uFEFF/g,'').trim(); }
+    function setStatus(msg){ var el = document.getElementById('status'); if (el) el.innerText = msg; }
+
+    function fetchTextOrThrow(path){
+      return fetch(path).then(function(res){
+        if (!res.ok) throw new Error('Failed to fetch ' + path);
+        return res.text();
+      });
+    }
+    function parseCSVToArray(csvText){ return Papa.parse(csvText, { skipEmptyLines: true }).data; }
+
+    function getBaseStyle(){
+      return [
+        { selector:'node', style:{
+            'background-color':'data(color)', 'label':'data(label)', 'shape':'data(shape)',
+            'width':35, 'height':35, 'text-valign':'center', 'font-size':8, 'color':'#000',
+            'text-outline-width':1, 'text-outline-color':'#fff', 'border-width':1, 'border-color':'#333'
+        } },
+        { selector:'edge', style:{ 'width':2, 'line-color':'#999', 'curve-style':'bezier' } }, /* undirected */
+        { selector:'node.cy-highlighted', style:{ 'border-width':6, 'border-color':'#FFD700' } }
+      ];
+    }
+
+    /* -----------------------------
+     * Build elements (normalize all fields)
+     * ---------------------------*/
+    function buildAllElementsFromActiveProject(){
+      var allNodes = [];
+      for (var i=1; i<activeProjectData.nodes.length; i++){
+        var row = activeProjectData.nodes[i]; if (!row) continue;
+        var id = norm(row[0]);
+        var label = norm(row[1]);
+        var shape = norm(row[2]) || 'ellipse';
+        var color = norm(row[3]) || '#8faadc';
+        var grid = norm(row[4]);
+        var load = (row.length > 5) ? norm(row[5]) : ''; /* optional load in column index 5 */
+
+        allNodes.push({ data: { id:id, label:label, shape:shape.toLowerCase(), color:color, grid:grid, load:load } });
+      }
+      var allEdges = [];
+      for (var j=1; j<activeProjectData.edges.length; j++){
+        var erow = activeProjectData.edges[j]; if (!erow) continue;
+        allEdges.push({ data: { id: norm(erow[0]), source: norm(erow[1]), target: norm(erow[2]) } });
+      }
+      return { nodes: allNodes, edges: allEdges };
+    }
+
+    /* -----------------------------
+     * Tooltip helpers (Added)
+     * ---------------------------*/
+    var _tooltipNodeId = null;
+
+    function showTooltipForNode(node){
+      var t = document.getElementById('tooltip');
+      if (!t || !cy || !node || !node.isNode || !node.isNode()) return;
+
+      var label = norm(node.data('label'));
+      var grid  = norm(node.data('grid'));
+      var load  = norm(node.data('load'));
+
+      var parts = [ 'Feeder: ' + label, 'Grid: ' + grid ];
+      if (load) parts.push('Load: ' + load);
+      t.textContent = parts.join('\n');
+
+      var rp = node.renderedPosition();
+      var rect = cy.container().getBoundingClientRect();
+      var offsetX = 14, offsetY = -10;
+      var left = Math.round(rect.left + rp.x + offsetX);
+      var top  = Math.round(rect.top  + rp.y + offsetY);
+
+      t.style.left = left + 'px';
+      t.style.top  = top  + 'px';
+      t.style.display = 'block';
+
+      _tooltipNodeId = node.id();
+    }
+
+    function hideTooltip(){
+      var t = document.getElementById('tooltip');
+      if (!t) return;
+      t.style.display = 'none';
+      _tooltipNodeId = null;
+    }
+
+    function updateTooltipPositionIfVisible(){
+      if (!_tooltipNodeId || !cy) return;
+      var node = cy.getElementById(_tooltipNodeId);
+      if (node && node.length){
+        showTooltipForNode(node); // recompute position
+      } else {
+        hideTooltip();
+      }
+    }
+
+    /* Keep handler references so we can off() them precisely */
+    function onNodeTap(evt){ showTooltipForNode(evt.target); }
+    function onCoreTap(evt){ if (evt.target === cy) hideTooltip(); }
+    function onViewportChange(){ updateTooltipPositionIfVisible(); }
+
+    function attachCyTooltipHandlers(){
+      if (!cy) return;
+
+      /* Remove only our tooltip handlers */
+      cy.off('tap', 'node', onNodeTap);
+      cy.off('tap', onCoreTap);
+      cy.off('zoom', onViewportChange);
+      cy.off('pan', onViewportChange);
+      cy.off('dragfree', onViewportChange);
+      cy.off('position', onViewportChange);
+
+      /* Re-bind */
+      cy.on('tap', 'node', onNodeTap);
+      cy.on('tap', onCoreTap);
+      cy.on('zoom', onViewportChange);
+      cy.on('pan', onViewportChange);
+      cy.on('dragfree', onViewportChange);
+      cy.on('position', onViewportChange);
+    }
+
+    /* -----------------------------
+     * Render FULL graph, then callback AFTER layout finishes
+     * ---------------------------*/
+    function ensureFullGraphRenderedAsync(done){
+      var data = buildAllElementsFromActiveProject();
+      var style = getBaseStyle();
+      if (!cy){
+        cy = cytoscape({
+          container: document.getElementById('cy'),
+          elements: data,
+          style: style,
+          layout: DEFAULT_LAYOUT
+        });
+        cy.one('layoutstop', function(){ if (typeof done === 'function') done(); });
+        attachCyTooltipHandlers(); /* bind tooltip after cy creation */
+      } else {
+        cy.stop();
+        cy.elements().remove();
+        cy.style().fromJson(style).update();
+        cy.add(data.nodes.concat(data.edges));
+        var layout = cy.layout(DEFAULT_LAYOUT);
+        cy.one('layoutstop', function(){ if (typeof done === 'function') done(); });
+        layout.run();
+        attachCyTooltipHandlers(); /* re-bind tooltip handlers */
+      }
+    }
+
+    /* -----------------------------
+     * UI: Grid filter list
+     * ---------------------------*/
+    function renderGridFilters(){
+      var container = document.getElementById('gridFilterContainer');
+      container.innerHTML = '';
+      if (!activeProjectData.nodes || activeProjectData.nodes.length === 0){
+        container.innerHTML = '<p style="font-size:11px;color:#aaa;text-align:center;margin-top:40px;">Select a project to load grids</p>';
+        return;
+      }
+      var map = {};
+      for (var i=1; i<activeProjectData.nodes.length; i++){
+        var row = activeProjectData.nodes[i]; if (!row) continue;
+        var g = norm(row[4]); if (g) map[g] = true;
+      }
+      var grids = Object.keys(map).sort();
+      if (grids.length === 0){
+        container.innerHTML = '<p style="font-size:11px;color:#aaa;text-align:center;margin-top:40px;">No grids found in nodes CSV (column index 4)</p>';
+        return;
+      }
+      for (var k=0; k<grids.length; k++){
+        var grid = grids[k];
+        var div = document.createElement('div');
+        div.className = 'grid-item';
+        div.innerHTML = '<input type="checkbox" class="grid-chk" value="'+grid+'"> <span class="grid-name-label">'+grid+'</span>';
+        container.appendChild(div);
+      }
+    }
+    function filterGridList(){
+      var val = norm(document.getElementById('gridSearchInput').value).toLowerCase();
+      var items = document.querySelectorAll('.grid-item');
+      for (var i=0; i<items.length; i++){
+        var label = items[i].querySelector('.grid-name-label');
+        var text = label ? norm(label.innerText).toLowerCase() : '';
+        items[i].style.display = (text.indexOf(val) !== -1) ? 'flex' : 'none';
+      }
+    }
+    function toggleSelectAllHandler(){
+      var source = document.getElementById('selectAllGrids');
+      var cbs = document.querySelectorAll('.grid-chk');
+      for (var i=0; i<cbs.length; i++){
+        if (cbs[i].parentElement && cbs[i].parentElement.style.display !== 'none'){
+          cbs[i].checked = source.checked;
+        }
+      }
+    }
+    function applyFilter(){
+      var cbs = document.querySelectorAll('.grid-chk:checked');
+      var arr = [];
+      for (var i=0; i<cbs.length; i++){ arr.push(cbs[i].value); }
+      selectedGrids = arr;
+
+alert(
+    (selectedGrids.length > 0 
+        ? ('Filtering ' + selectedGrids.length + ' Grids') 
+        : 'All Grids Selected'
+    ) 
+    + '\n\nFeeders of selected grids will be shown with only direct interconnected feeders'
+);
+
+    }
+    function resetFilter(){
+      selectedGrids = [];
+      var cbs = document.querySelectorAll('.grid-chk');
+      for (var i=0; i<cbs.length; i++){ cbs[i].checked = false; }
+      var selAll = document.getElementById('selectAllGrids'); if (selAll) selAll.checked = false;
+      var inp = document.getElementById('gridSearchInput'); if (inp) inp.value = '';
+      filterGridList();
+    }
+
+    /* -----------------------------
+     * Feeder Search (populate + exact match by LABEL + GRID)
+     * ---------------------------*/
+    function fillGridForFeederSearchSelect(){
+      var gridSelect = document.getElementById('gridForFeederSearch');
+      gridSelect.innerHTML = '<option value="" selected disabled>Choose grid…</option>';
+      var map = {};
+      for (var i=1; i<activeProjectData.nodes.length; i++){
+        var row = activeProjectData.nodes[i]; if (!row) continue;
+        var g = norm(row[4]); if (g) map[g] = true;
+      }
+      var grids = Object.keys(map).sort();
+      for (var k=0; k<grids.length; k++){
+        var opt = document.createElement('option'); opt.value = grids[k]; opt.text = grids[k];
+        gridSelect.add(opt);
+      }
+      var feederSelect = document.getElementById('feederList');
+      feederSelect.innerHTML = '<option value="" selected disabled>Choose feeder…</option>';
+    }
+
+    function populateFeederList(){
+      var feederSelect = document.getElementById('feederList');
+      feederSelect.innerHTML = '<option value="" selected disabled>Choose feeder…</option>';
+      var gridSel = norm(document.getElementById('gridForFeederSearch').value);
+      if (!gridSel) return;
+
+      var rows = activeProjectData.nodes.slice(1);
+      var seen = {};
+      for (var i=0; i<rows.length; i++){
+        var r = rows[i]; if (!r) continue;
+        var id = norm(r[0]), label = norm(r[1]), grid = norm(r[4]);
+        if (!id || !label) continue;
+        if (grid === gridSel && !seen[label]) {
+          var o = document.createElement('option');
+          o.value = id;         // keep id for reference if needed
+          o.text  = label;      // show label
+          o.setAttribute('data-label', label);
+          o.setAttribute('data-grid', grid);
+          feederSelect.add(o);
+          seen[label] = true;
+        }
+      }
+    }
+
+    /* -----------------------------
+     * SMART Search & Highlight respecting Grid filter (UPDATED)
+     * ---------------------------*/
+    function flickerNode(ele, times){
+      if (typeof times === 'undefined') times = 3;
+      var count = 0;
+      var interval = setInterval(function(){
+        ele.toggleClass('cy-highlighted');
+        count++;
+        if (count >= times*2){ clearInterval(interval); ele.removeClass('cy-highlighted'); }
+      }, 250);
+    }
+
+    function searchFeeder(){
+      if (!activeProjectData.nodes || activeProjectData.nodes.length === 0){
+        alert('Please select a project first.'); return;
+      }
+
+      var gridSel = norm(document.getElementById('gridForFeederSearch').value);
+      var feederList = document.getElementById('feederList');
+      if (!feederList || feederList.selectedIndex < 0){
+        alert('Select a feeder (node) to search.'); return;
+      }
+
+      // Take label from <option data-label>, not the id (value)
+      var selectedLabel = norm(
+        feederList.options[feederList.selectedIndex].getAttribute('data-label') ||
+        feederList.options[feederList.selectedIndex].text
+      );
+      var selectedGrid  = norm(
+        feederList.options[feederList.selectedIndex].getAttribute('data-grid') ||
+        gridSel
+      );
+
+      if (!selectedLabel || !selectedGrid){
+        alert('Select grid and feeder (node) first.'); return;
+      }
+
+      var hasFilter = Array.isArray(selectedGrids) && selectedGrids.length > 0;
+
+      function findCandidatesInCurrentCy(){
+        if (!cy) return null;
+        var candidates = cy.nodes().filter(function(n){
+          var nLabel = norm(n.data('label'));
+          var nGrid  = norm(n.data('grid'));
+          return (nLabel.toLowerCase() === selectedLabel.toLowerCase()) && (nGrid === selectedGrid);
+        });
+        if (!candidates || candidates.length === 0){
+          candidates = cy.nodes().filter(function(n){
+            return norm(n.data('label')).toLowerCase() === selectedLabel.toLowerCase();
+          });
+        }
+        return (candidates && candidates.length > 0) ? candidates : null;
+      }
+
+      function highlightInCurrentCyOrWarn(){
+        var candidates = findCandidatesInCurrentCy();
+        if (candidates){
+          var target = candidates[0];
+          cy.animate({ center: { eles: target }, zoom: Math.min(2, cy.maxZoom() || 2) }, { duration: 600 });
+          flickerNode(target, 3);
+          return true;
+        } else {
+          if (hasFilter){
+            alert(
+              'A Grid Station filter is active.\n' +
+              'The selected feeder is outside the current filter.\n' +
+              'Cancel the filter to show this feeder.'
+            );
+            return false;
+          } else {
+            alert('Feeder node "' + selectedLabel + '" not found.');
+            return false;
+          }
+        }
+      }
+
+      if (hasFilter){
+        // KEEP filtered graph. Try to highlight within what’s currently drawn.
+        if (!cy){
+          // Nothing drawn yet; draw filtered set and then try
+          drawGraph();
+          if (cy){
+            var runAfter = function(){
+              highlightInCurrentCyOrWarn();
+            };
+            cy.one('layoutstop', runAfter);
+          }
+        } else {
+          highlightInCurrentCyOrWarn();
+        }
+      } else {
+        // No filter active: use the existing full-graph workflow
+        ensureFullGraphRenderedAsync(function(){
+          // Now search across full graph and highlight
+          var candidates = cy.nodes().filter(function(n){
+            var nLabel = norm(n.data('label'));
+            var nGrid  = norm(n.data('grid'));
+            return (nLabel.toLowerCase() === selectedLabel.toLowerCase()) && (nGrid === selectedGrid);
+          });
+          if (!candidates || candidates.length === 0){
+            candidates = cy.nodes().filter(function(n){
+              return norm(n.data('label')).toLowerCase() === selectedLabel.toLowerCase();
+            });
+          }
+          if (!candidates || candidates.length === 0){
+            alert('Feeder node "' + selectedLabel + '" not found.');
+            return;
+          }
+          var target = candidates[0];
+          cy.animate({ center: { eles: target }, zoom: Math.min(2, cy.maxZoom() || 2) }, { duration: 600 });
+          flickerNode(target, 3);
+        });
+      }
+    }
+
+    /* -----------------------------
+     * Draw Graph (undirected) with current grid filter
+     * ---------------------------*/
+    function drawGraph(){
+      if (!activeProjectData.nodes || activeProjectData.nodes.length === 0) return;
+
+      var data = buildAllElementsFromActiveProject();
+      var fn = data.nodes.slice(0);
+      var fe = data.edges.slice(0);
+
+      if (selectedGrids.length > 0){
+        var primary = {};
+        for (var i=0; i<fn.length; i++){ if (selectedGrids.indexOf(fn[i].data.grid) !== -1){ primary[fn[i].data.id] = true; } }
+        var linked = {};
+        for (var j=0; j<fe.length; j++){
+          var e = fe[j].data;
+          if (primary[e.source]) linked[e.target] = true;
+          if (primary[e.target]) linked[e.source] = true;
+        }
+        var combined = {};
+        for (var k in primary){ combined[k] = true; }
+        for (var k2 in linked){ combined[k2] = true; }
+        fn = fn.filter(function(n){ return combined[n.data.id]; });
+        fe = fe.filter(function(e2){ return combined[e2.data.source] && combined[e2.data.target]; });
+      }
+
+      var style = getBaseStyle();
+      if (!cy){
+        cy = cytoscape({ container: document.getElementById('cy'), elements: { nodes: fn, edges: fe }, style: style, layout: DEFAULT_LAYOUT });
+        attachCyTooltipHandlers(); /* keep tooltip */
+      } else {
+        cy.stop(); cy.elements().remove(); cy.style().fromJson(style).update(); cy.add(fn.concat(fe)); 
+        cy.layout(DEFAULT_LAYOUT).run();
+        attachCyTooltipHandlers(); /* keep tooltip */
+      }
+    }
+
+    /* -----------------------------
+     * Export
+     * ---------------------------*/
+    function dataURItoBlob(dataURI){
+      var parts = dataURI.split(',');
+      var mime = parts[0].match(/:(.*?);/)[1];
+      var byteString = atob(parts[1]);
+      var ab = new ArrayBuffer(byteString.length);
+      var ia = new Uint8Array(ab);
+      for (var i=0; i<byteString.length; i++) ia[i] = byteString.charCodeAt(i);
+      return new Blob([ab], { type: mime });
+    }
+    function exportPng(){ if (!cy) return; var dataUrl = cy.png({ full:true, scale:2 }); var blob = dataURItoBlob(dataUrl); saveAs(blob, 'Network_Export.png'); }
+    function exportPdf(){ if (!cy) return; var dataUrl = cy.png({ full:true, scale:1.5 }); pdfMake.createPdf({ content:[{ image:dataUrl, width:500 }] }).download('SLD_Report.pdf'); }
+
+    /* -----------------------------
+     * Project selection & preload
+     * ---------------------------*/
+    function onProjectSelect(){
+      var pName = document.getElementById('projectList').value; activeProjectName = pName;
+      var cached = projectDataCache[pName];
+      if (!cached || !cached.nodes || cached.nodes.length===0 || !cached.edges || cached.edges.length===0){
+        setStatus('File mismatch (Check names) ❌'); return;
+      }
+      activeProjectData.nodes = cached.nodes; activeProjectData.edges = cached.edges;
+      renderGridFilters();
+      fillGridForFeederSearchSelect();
+      document.getElementById('drawBtn').disabled = false;
+      setStatus(pName + ' Ready  ✅');
+    }
+
+    document.addEventListener('DOMContentLoaded', function(){
+      // Grid filter events
+      document.getElementById('gridSearchInput').addEventListener('input', filterGridList);
+      document.getElementById('selectAllGrids').addEventListener('click', toggleSelectAllHandler);
+      document.getElementById('applyFilterBtn').addEventListener('click', applyFilter);
+      document.getElementById('resetFilterBtn').addEventListener('click', resetFilter);
+
+      // Feeder search events
+      document.getElementById('gridForFeederSearch').addEventListener('change', populateFeederList);
+      document.getElementById('searchFeederBtn').addEventListener('click', searchFeeder);
+
+      // Graph & export
+      document.getElementById('drawBtn').addEventListener('click', drawGraph);
+      document.getElementById('exportPngBtn').addEventListener('click', exportPng);
+      document.getElementById('exportPdfBtn').addEventListener('click', exportPdf);
+
+      // Project selection
+      document.getElementById('projectList').addEventListener('change', onProjectSelect);
+
+      // Preload projects and their CSVs
+      var preloadStatus = document.getElementById('preloadStatus');
+      var projectList = document.getElementById('projectList');
+
+      fetchTextOrThrow('projects.csv').then(function(projectsCSV){
+        var parsed = parseCSVToArray(projectsCSV);
+        var projectNames = [];
+        for (var i=1; i<parsed.length; i++){ if (parsed[i] && parsed[i][0]) projectNames.push(norm(parsed[i][0])); }
+        projectList.innerHTML = '<option value="" disabled selected>Select a Project...</option>';
+        for (var p=0; p<projectNames.length; p++){
+          var name = projectNames[p]; var opt = document.createElement('option'); opt.value = name; opt.text = name; projectList.add(opt);
+        }
+        setStatus('Data Loaded ✅');
+        preloadStatus.innerText = 'Preloading ' + projectNames.length + ' project(s)...';
+
+        var idx = 0;
+        function preloadNext(){
+          if (idx >= projectNames.length){ preloadStatus.innerText = ' Ready ✅'; return; }
+          var pName = projectNames[idx++];
+          Promise.all([ fetchTextOrThrow(pName+'nodes.csv'), fetchTextOrThrow(pName+'edges.csv') ])
+            .then(function(res){
+              projectDataCache[pName] = { nodes: parseCSVToArray(res[0]), edges: parseCSVToArray(res[1]) };
+              preloadStatus.innerText = 'Preloaded ' + idx + '/' + projectNames.length + ': "' + pName + '" ✅';
+              preloadNext();
+            })
+            .catch(function(err){
+              console.error('Preload error for project "'+pName+'":', err);
+              projectDataCache[pName] = { nodes: [], edges: [] };
+              preloadStatus.innerText = 'Preloaded ' + (idx-1) + '/' + projectNames.length + ' (some projects missing files) ⚠️';
+              preloadNext();
+            });
+        }
+        preloadNext();
+      }).catch(function(err){
+        console.error('Fetch Error:', err);
+      });
+    });
+  </script>
+</body>
+</html>
