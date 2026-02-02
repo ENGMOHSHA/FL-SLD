@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>BIRDEYE - Network Intelligence</title>
+  
+  <script src="https://cdn.jsdelivr.net/npm/cytoscape@3.20.0/dist/cytoscape.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.70/pdfmake.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.70/vfs_fonts.js"></script>
+  <script src="https://unpkg.com/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { display: flex; height: 100vh; font-family: 'Segoe UI', sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); overflow: hidden; }
+    #leftSection { display: none; flex-direction: column; gap: 12px; padding: 20px; height: 100vh; width: 360px; position: fixed; top: 0; left: 0; background: rgba(255, 255, 255, 0.98); backdrop-filter: blur(10px); z-index: 1000; box-shadow: 4px 0 20px rgba(0, 0, 0, 0.15); overflow-y: auto; }
+    #leftSection.show { display: flex; }
+    #burgerButton { position: fixed; top: 20px; left: 20px; cursor: pointer; z-index: 2000; background: white; width: 45px; height: 45px; border-radius: 10px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); font-size: 20px; pointer-events: auto; user-select: none; }
+    .brand { font-size: 24px; font-weight: bold; text-align: center; margin-bottom: 2px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .dev-credit { font-size: 11px; text-align: center; color: #764ba2; font-weight: 600; margin-bottom: 10px; }
+    .panel-section { background: #ffffff; border: 2px solid #eef0ff; border-radius: 10px; padding: 12px; }
+    .section-title { font-size: 11px; font-weight: 800; text-transform: uppercase; color: #666; letter-spacing: 0.5px; margin-bottom: 8px; }
+    .divider { height: 1px; background: #eee; margin: 10px 0; }
+    select, input[type="text"] { padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; width: 100%; outline: none; background: #fff; }
+    button { padding: 12px; border: none; border-radius: 6px; font-weight: 700; cursor: pointer; color: white; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); font-size: 11px; text-transform: uppercase; }
+    #drawBtn { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); }
+    #drawBtn:disabled { opacity: 0.3; cursor: not-allowed; }
+    .btn-row { display: flex; gap: 8px; }
+    .btn-outline { background: #555; }
+    .btn-danger { background: #ff4b2b; }
+    .btn-info { background: #4facfe; }
+    .slider-row { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+    .slider-label { font-size: 12px; color: #444; font-weight: 600; }
+    input[type="range"] { -webkit-appearance: none; width: 100%; height: 6px; border-radius: 5px; background: #e8eaf6; outline: none; }
+    input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #667eea; cursor: pointer; border: 2px solid white; box-shadow: 0 0 2px rgba(0,0,0,0.2); }
+    input[type="range"]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: #667eea; cursor: pointer; border: 2px solid white; }
+    #gridFilterContainer { height: 250px; min-height: 250px; overflow-y: auto; background: #ffffff; padding: 8px; border-radius: 8px; border: 2px solid #667eea; }
+    .grid-item { display: flex; align-items: center; gap: 10px; padding: 8px; font-size: 13px; border-bottom: 1px solid #f0f0f0; }
+    .grid-item:hover { background: #f0f4ff; }
+    #status { font-size: 10px; text-align: center; font-weight: bold; color: #764ba2; padding-bottom: 5px; }
+    #cy { flex-grow: 1; margin: 20px 20px 20px 80px; background: white; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); position: relative; z-index: 1; }
+    #tooltip { position: fixed; display: none; max-width: 260px; background: rgba(0,0,0,0.85); color: #fff; padding: 8px 10px; border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,0.25); font-size: 12px; line-height: 1.35; z-index: 3000; pointer-events: none; white-space: pre-line; }
+  </style>
+</head>
+<body>
+  <div id="burgerButton">☰</div>
+  <div id="leftSection">
+    <div class="brand">🦅 BIRDEYE</div>
+    <div class="dev-credit">Developed by Eng. Mohamad Shaban</div>
+    <div id="status">Loading from GitHub...</div>
+
+    <div class="panel-section">
+      <div class="section-title">1) Project Selection</div>
+      <select id="projectList"><option disabled selected>Loading projects...</option></select>
+      <div class="divider"></div>
+      <div id="preloadStatus" style="font-size:12px; color:#666;"></div>
+    </div>
+
+    <div class="panel-section">
+      <div class="section-title">2) Filter by Grid Station</div>
+      <input type="text" id="gridSearchInput" placeholder="Search grids...">
+      <div style="display:flex; align-items:center; gap:8px; padding:6px 0;"><input type="checkbox" id="selectAllGrids"><label for="selectAllGrids" style="font-size:12px; font-weight: 600; color:#444;">Select All (visible)</label></div>
+      <div id="gridFilterContainer"><p id="emptyMsg" style="font-size:11px; color:#aaa; text-align:center; margin-top:40px;">Select project to load grids</p></div>
+      <div class="btn-row" style="margin-top:8px;"><button id="applyFilterBtn" class="btn-info" style="flex:1;">Apply</button><button id="resetFilterBtn" class="btn-danger" style="flex:1;">Reset</button></div>
+    </div>
+
+    <div class="panel-section">
+      <div class="section-title">3) Feeder Search</div>
+      <label for="gridForFeederSearch" style="font-size:12px; color:#444;">Select Grid Station</label>
+      <select id="gridForFeederSearch"><option value="" selected disabled>Choose grid…</option></select>
+      <div style="height:8px;"></div>
+      <label for="feederList" style="font-size:12px; color:#444;">Select Feeder</label>
+      <select id="feederList"><option value="" selected disabled>Choose feeder…</option></select>
+      <div class="btn-row" style="margin-top:8px;"><button id="searchFeederBtn">Search & Highlight</button></div>
+    </div>
+
+    <div class="panel-section">
+      <div class="section-title">4) Graph Actions</div>
+      <button id="drawBtn" disabled>DRAW FL-SLD</button>
+    </div>
+
+    <div class="panel-section">
+      <div class="section-title">Graph Handling</div>
+      <div class="btn-row" style="margin-bottom:8px;"><button id="rectifyLoopsBtn" class="btn-outline">Rect Loop</button></div>
+      <div style="margin:6px 0 10px 0;"><div class="slider-label" style="margin-bottom:6px;">Loop Orientation</div><label style="font-size:12px; margin-right:14px;"><input type="radio" name="smallLoopOrient" value="vertical" checked> Vertical</label><label style="font-size:12px;"><input type="radio" name="smallLoopOrient" value="horizontal"> Horizontal</label></div>
+      <div class="slider-row"><div class="slider-label">Loop Spacing</div><input id="ui_minGap" type="range" min="16" max="80" step="2" value="36"/></div>
+      <div class="slider-row"><div class="slider-label">Grid Expansion Limit</div><input id="ui_maxGrowLimit" type="range" min="12" max="60" step="1" value="30"/></div>
+      <div class="slider-row" style="margin-bottom:0;"><div class="slider-label">Auto‑Fix Depth</div><input id="ui_relocMoves" type="range" min="50" max="600" step="10" value="200"/></div>
+    </div>
+
+    <div class="panel-section">
+      <div class="section-title">5) Export</div>
+      <div class="btn-row"><button id="exportPdfBtn" class="btn-outline" style="flex:1;">PDF</button><button id="exportPngBtn" class="btn-outline" style="flex:1;">PNG</button></div>
+    </div>
+  </div>
+
+  <div id="cy"></div>
+  <div id="tooltip"></div>
+
+  <script>
+    var cy = null, selectedGrids = [], activeProjectName = '', activeProjectData = { nodes: [], edges: [] }, projectDataCache = {}, smallLoopOrientation = 'vertical', DEFAULT_LAYOUT = { name: 'cose', padding: 30, animate: true };
+
+    function norm(v){ return (v == null ? '' : (''+v)).replace(/\uFEFF/g,'').trim(); }
+    function setStatus(msg){ var el = document.getElementById('status'); if (el) el.innerText = msg; }
+    function fetchTextOrThrow(url){ return fetch(url, { mode: 'cors' }).then(function(res){ if (!res.ok) throw new Error('Failed: ' + url); return res.text(); }); }
+    function parseCSVToArray(csvText){ return Papa.parse(csvText, { skipEmptyLines: true }).data; }
+
+    // COLOR NAME TO HEX MAPPING
+    var COLOR_MAP = {
+      'BLUE': '#0000FF', 'RED': '#FF0000', 'GREEN': '#00AA00', 'YELLOW': '#FFFF00', 'ORANGE': '#FF8800',
+      'PURPLE': '#800080', 'PINK': '#FF1493', 'CYAN': '#00FFFF', 'MAGENTA': '#FF00FF', 'LIME': '#00FF00',
+      'NAVY': '#000080', 'TEAL': '#008080', 'AQUA': '#00FFFF', 'MAROON': '#800000', 'OLIVE': '#808000',
+      'SILVER': '#C0C0C0', 'GRAY': '#808080', 'GREY': '#808080', 'WHITE': '#FFFFFF', 'BLACK': '#000000',
+      'BROWN': '#8B4513', 'GOLD': '#FFD700', 'KHAKI': '#F0E68C', 'CORAL': '#FF7F50'
+    };
+
+    var KNOWN_SHAPES = {'ellipse':1, 'round-rectangle':1, 'rectangle':1, 'triangle':1, 'diamond':1, 'hexagon':1, 'heptagon':1, 'octagon':1, 'star':1, 'vee':1, 'pentagon':1, 'round-pentagon':1, 'round-hexagon':1, 'round-triangle':1, 'round-diamond':1};
+    
+    function safeShape(raw){ if (!raw) return ''; var s = (''+raw).trim().toLowerCase(); if (s === 'circle') s = 'ellipse'; if (KNOWN_SHAPES[s]) return s; return ''; }
+    
+    function safeColor(raw){
+      var c = (raw || '').trim();
+      // Check if hex color
+      if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(c) || /^rgba?\(/i.test(c) || /^hsla?\(/i.test(c)) return c;
+      // Check if color name - convert to hex
+      var colorUpper = c.toUpperCase();
+      if (COLOR_MAP[colorUpper]) return COLOR_MAP[colorUpper];
+      // Default color
+      return '#8faadc';
+    }
+
+    function getBaseStyle(){ return [{ selector:'node', style:{'shape': 'ellipse','background-color':'data(color)','label':'data(label)','width':35, 'height':35,'text-valign':'center','font-size':8, 'color':'#000','text-outline-width':1, 'text-outline-color':'#fff','border-width':1, 'border-color':'#333'}},{ selector: 'node[shape]', style: { 'shape': 'data(shape)' }},{ selector:'edge', style:{ 'width':2, 'line-color':'#999', 'curve-style':'bezier' }},{ selector:'node.cy-highlighted', style:{ 'border-width':6, 'border-color':'#FFD700' } }]; }
+
+    function buildAllElementsFromActiveProject(){ var allNodes = []; for (var i=1; i<activeProjectData.nodes.length; i++){ var row = activeProjectData.nodes[i]; if (!row) continue; var id = norm(row[0]), label = norm(row[1]), shape = safeShape(norm(row[2])), color = safeColor(norm(row[3])), grid = norm(row[4]), load = (row.length > 5) ? norm(row[5]) : ''; var data = { id:id, label:label, color:color, grid:grid, load:load }; if (shape) data.shape = shape; allNodes.push({ data: data }); } var allEdges = []; for (var j=1; j<activeProjectData.edges.length; j++){ var erow = activeProjectData.edges[j]; if (!erow) continue; allEdges.push({ data: { id: norm(erow[0]), source: norm(erow[1]), target: norm(erow[2]) } }); } return { nodes: allNodes, edges: allEdges }; }
+
+    var _tooltipNodeId = null;
+    function showTooltipForNode(node){ var t = document.getElementById('tooltip'); if (!t || !cy || !node || !node.isNode || !node.isNode()) return; var label = norm(node.data('label')), grid = norm(node.data('grid')), load = norm(node.data('load')); var parts = [ 'Feeder: ' + label, 'Grid: ' + grid ]; if (load) parts.push('Load: ' + load); t.textContent = parts.join('\n'); var rp = node.renderedPosition(), rect = cy.container().getBoundingClientRect(), offsetX = 14, offsetY = -10, left = Math.round(rect.left + rp.x + offsetX), top = Math.round(rect.top + rp.y + offsetY); t.style.left = left + 'px'; t.style.top = top + 'px'; t.style.display = 'block'; _tooltipNodeId = node.id(); }
+    function hideTooltip(){ var t = document.getElementById('tooltip'); if (t){ t.style.display='none'; } _tooltipNodeId = null; }
+    function updateTooltipPositionIfVisible(){ if (!_tooltipNodeId || !cy) return; var node = cy.getElementById(_tooltipNodeId); if (node && node.length){ showTooltipForNode(node); } else { hideTooltip(); } }
+    function onNodeTap(evt){ showTooltipForNode(evt.target); }
+    function onCoreTap(evt){ if (evt.target === cy) hideTooltip(); }
+    function onViewportChange(){ updateTooltipPositionIfVisible(); }
+    function attachCyTooltipHandlers(){ if (!cy) return; cy.off('tap', 'node', onNodeTap); cy.off('tap', onCoreTap); cy.off('zoom', onViewportChange); cy.off('pan', onViewportChange); cy.off('dragfree', onViewportChange); cy.off('position', onViewportChange); cy.on('tap', 'node', onNodeTap); cy.on('tap', onCoreTap); cy.on('zoom', onViewportChange); cy.on('pan', onViewportChange); cy.on('dragfree', onViewportChange); cy.on('position', onViewportChange); }
+
+    function ensureFullGraphRenderedAsync(done){ var data = buildAllElementsFromActiveProject(), style = getBaseStyle(); if (!cy){ cy = cytoscape({ container: document.getElementById('cy'), elements: data, style: style, layout: DEFAULT_LAYOUT }); cy.one('layoutstop', function(){ if (typeof done === 'function') done(); }); attachCyTooltipHandlers(); } else { cy.stop(); cy.elements().remove(); cy.style().fromJson(style).update(); cy.add(data.nodes.concat(data.edges)); var layout = cy.layout(DEFAULT_LAYOUT); cy.one('layoutstop', function(){ if (typeof done === 'function') done(); }); layout.run(); attachCyTooltipHandlers(); } }
+
+    function renderGridFilters(){ var container = document.getElementById('gridFilterContainer'); container.innerHTML = ''; if (!activeProjectData.nodes || activeProjectData.nodes.length === 0){ container.innerHTML = '<p style="font-size:11px;color:#aaa;text-align:center;margin-top:40px;">Select a project to load grids</p>'; return; } var map = {}; for (var i=1; i<activeProjectData.nodes.length; i++){ var row = activeProjectData.nodes[i]; if (!row) continue; var g = norm(row[4]); if (g) map[g] = true; } var grids = Object.keys(map).sort(); if (grids.length === 0){ container.innerHTML = '<p style="font-size:11px;color:#aaa;text-align:center;margin-top:40px;">No grids found</p>'; return; } for (var k=0; k<grids.length; k++){ var grid = grids[k], div = document.createElement('div'); div.className = 'grid-item'; div.innerHTML = '<input type="checkbox" class="grid-chk" value="'+grid+'"> <span class="grid-name-label">'+grid+'</span>'; container.appendChild(div); } }
+    function filterGridList(){ var val = norm(document.getElementById('gridSearchInput').value).toLowerCase(), items = document.querySelectorAll('.grid-item'); for (var i=0; i<items.length; i++){ var label = items[i].querySelector('.grid-name-label'), text = label ? norm(label.innerText).toLowerCase() : ''; items[i].style.display = (text.indexOf(val) !== -1) ? 'flex' : 'none'; } }
+    function toggleSelectAllHandler(){ var source = document.getElementById('selectAllGrids'), cbs = document.querySelectorAll('.grid-chk'); for (var i=0; i<cbs.length; i++){ if (cbs[i].parentElement && cbs[i].parentElement.style.display !== 'none'){ cbs[i].checked = source.checked; } } }
+    function applyFilter(){ var cbs = document.querySelectorAll('.grid-chk:checked'), arr = []; for (var i=0; i<cbs.length; i++){ arr.push(cbs[i].value); } selectedGrids = arr; alert((selectedGrids.length > 0 ? ('Filtering ' + selectedGrids.length + ' Grids') : 'All Grids Selected') + '\n\nFeeders of selected grids will be shown with only direct interconnected feeders'); }
+    function resetFilter(){ selectedGrids = []; var cbs = document.querySelectorAll('.grid-chk'); for (var i=0; i<cbs.length; i++){ cbs[i].checked = false; } var selAll = document.getElementById('selectAllGrids'); if (selAll) selAll.checked = false; var inp = document.getElementById('gridSearchInput'); if (inp) inp.value = ''; filterGridList(); }
+
+    function fillGridForFeederSearchSelect(){ var gridSelect = document.getElementById('gridForFeederSearch'); gridSelect.innerHTML = '<option value="" selected disabled>Choose grid…</option>'; var map = {}; for (var i=1; i<activeProjectData.nodes.length; i++){ var row = activeProjectData.nodes[i]; if (!row) continue; var g = norm(row[4]); if (g) map[g] = true; } var grids = Object.keys(map).sort(); for (var k=0; k<grids.length; k++){ var opt = document.createElement('option'); opt.value = grids[k]; opt.text = grids[k]; gridSelect.add(opt); } var feederSelect = document.getElementById('feederList'); feederSelect.innerHTML = '<option value="" selected disabled>Choose feeder…</option>'; }
+    function populateFeederList(){ var feederSelect = document.getElementById('feederList'); feederSelect.innerHTML = '<option value="" selected disabled>Choose feeder…</option>'; var gridSel = norm(document.getElementById('gridForFeederSearch').value); if (!gridSel) return; var rows = activeProjectData.nodes.slice(1), seen = {}; for (var i=0; i<rows.length; i++){ var r = rows[i]; if (!r) continue; var id = norm(r[0]), label = norm(r[1]), grid = norm(r[4]); if (!id || !label) continue; if (grid === gridSel && !seen[label]) { var o = document.createElement('option'); o.value = id; o.text = label; o.setAttribute('data-label', label); o.setAttribute('data-grid', grid); feederSelect.add(o); seen[label] = true; } } }
+
+    function flickerNode(ele, times){ if (typeof times === 'undefined') times = 3; var count = 0, interval = setInterval(function(){ ele.toggleClass('cy-highlighted'); count++; if (count >= times*2){ clearInterval(interval); ele.removeClass('cy-highlighted'); } }, 250); }
+
+    function searchFeeder(){ if (!activeProjectData.nodes || activeProjectData.nodes.length === 0){ alert('Please select a project first.'); return; } var gridSel = norm(document.getElementById('gridForFeederSearch').value), feederList = document.getElementById('feederList'); if (!feederList || feederList.selectedIndex < 0){ alert('Select a feeder (node) to search.'); return; } var selectedLabel = norm(feederList.options[feederList.selectedIndex].getAttribute('data-label') || feederList.options[feederList.selectedIndex].text), selectedGrid = norm(feederList.options[feederList.selectedIndex].getAttribute('data-grid') || gridSel); if (!selectedLabel || !selectedGrid){ alert('Select grid and feeder (node) first.'); return; } var hasFilter = Array.isArray(selectedGrids) && selectedGrids.length > 0; function findCandidatesInCurrentCy(){ if (!cy) return null; var candidates = cy.nodes().filter(function(n){ var nLabel = norm(n.data('label')), nGrid = norm(n.data('grid')); return (nLabel.toLowerCase() === selectedLabel.toLowerCase()) && (nGrid === selectedGrid); }); if (!candidates || candidates.length === 0){ candidates = cy.nodes().filter(function(n){ return norm(n.data('label')).toLowerCase() === selectedLabel.toLowerCase(); }); } return (candidates && candidates.length > 0) ? candidates : null; } function highlightInCurrentCyOrWarn(){ var candidates = findCandidatesInCurrentCy(); if (candidates){ var target = candidates[0]; cy.animate({ center: { eles: target }, zoom: Math.min(2, cy.maxZoom() || 2) }, { duration: 600 }); flickerNode(target, 3); return true; } else { if (hasFilter){ alert('A Grid Station filter is active.\nThe selected feeder is outside the current filter.\nCancel the filter to show this feeder.'); return false; } else { alert('Feeder node "' + selectedLabel + '" not found.'); return false; } } } if (hasFilter){ if (!cy){ drawGraph(); if (cy){ var runAfter = function(){ highlightInCurrentCyOrWarn(); }; cy.one('layoutstop', runAfter); } } else { highlightInCurrentCyOrWarn(); } } else { ensureFullGraphRenderedAsync(function(){ var candidates = cy.nodes().filter(function(n){ var nLabel = norm(n.data('label')), nGrid = norm(n.data('grid')); return (nLabel.toLowerCase() === selectedLabel.toLowerCase()) && (nGrid === selectedGrid); }); if (!candidates || candidates.length === 0){ candidates = cy.nodes().filter(function(n){ return norm(n.data('label')).toLowerCase() === selectedLabel.toLowerCase(); }); } if (!candidates || candidates.length === 0){ alert('Feeder node "' + selectedLabel + '" not found.'); return; } var target = candidates[0]; cy.animate({ center: { eles: target }, zoom: Math.min(2, cy.maxZoom() || 2) }, { duration: 600 }); flickerNode(target, 3); }); } }
+
+    function drawGraph(){ if (!activeProjectData.nodes || activeProjectData.nodes.length === 0) return; var data = buildAllElementsFromActiveProject(), fn = data.nodes.slice(0), fe = data.edges.slice(0); if (selectedGrids.length > 0){ var primary = {}; for (var i=0; i<fn.length; i++){ if (selectedGrids.indexOf(fn[i].data.grid) !== -1){ primary[fn[i].data.id] = true; } } var linked = {}; for (var j=0; j<fe.length; j++){ var e = fe[j].data; if (primary[e.source]) linked[e.target] = true; if (primary[e.target]) linked[e.source] = true; } var combined = {}; for (var k in primary){ combined[k] = true; } for (var k2 in linked){ combined[k2] = true; } fn = fn.filter(function(n){ return combined[n.data.id]; }); fe = fe.filter(function(e2){ return combined[e2.data.source] && combined[e2.data.target]; }); } var style = getBaseStyle(); if (!cy){ cy = cytoscape({ container: document.getElementById('cy'), elements: { nodes: fn, edges: fe }, style: style, layout: DEFAULT_LAYOUT }); attachCyTooltipHandlers(); } else { cy.stop(); cy.elements().remove(); cy.style().fromJson(style).update(); cy.add(fn.concat(fe)); cy.layout(DEFAULT_LAYOUT).run(); attachCyTooltipHandlers(); } }
+
+    function bfsOrderWithin(nodes){ if (!nodes || nodes.length === 0) return []; var ordered = [], visited = {}, queue = []; var start = nodes[0]; queue.push(start); visited[start.id()] = true; while (queue.length > 0){ var curr = queue.shift(); ordered.push(curr); var neighbors = curr.neighbors(); for (var i=0; i<neighbors.length; i++){ var nb = neighbors[i]; if (!visited[nb.id()]){ visited[nb.id()] = true; queue.push(nb); } } } for (var j=0; j<nodes.length; j++){ if (!visited[nodes[j].id()]){ ordered.push(nodes[j]); } } return ordered; }
+
+    function rectangularizeLoops(){ if (!cy) { alert('Please draw the graph first.'); return; } var opts = {}; opts.padding = 40; opts.stepBase = 84; opts.minGap = parseInt(document.getElementById('ui_minGap').value, 10); opts.margin = 40; opts.animate = true; opts.duration = 700; opts.arWeight = 10; opts.lineReward = 3.0; opts.maxGrow = 10; opts.maxGrowLimit = parseInt(document.getElementById('ui_maxGrowLimit').value, 10); opts.growUntilNoCross = true; opts.minDist = 0.35; opts.relocMoves = parseInt(document.getElementById('ui_relocMoves').value, 10); var allComps = cy.elements().components(); if (!allComps || allComps.length === 0) return; var targetPositions = {}; for (var i=0; i<allComps.length; i++){ var comp = allComps[i]; var nodes = comp.nodes(); if (!nodes || nodes.length === 0) continue; var ordered = bfsOrderWithin(nodes); var n = ordered.length; var x = opts.margin + (i * 200); var y = opts.margin; for (var k=0; k<n; k++){ var id = ordered[k].id(); var spacing = 60; targetPositions[id] = { x: x + k*spacing, y: y }; } } cy.batch(function(){ for (var id in targetPositions) { if (!targetPositions.hasOwnProperty(id)) continue; cy.getElementById(id).position(targetPositions[id]); } }); if (opts.animate) { cy.animate({ fit: { eles: cy.elements(), padding: 40 } }, { duration: opts.duration }); } }
+
+    function onProjectSelect(){ var pName = document.getElementById('projectList').value; activeProjectName = pName; var cached = projectDataCache[pName]; if (!cached || !cached.nodes || cached.nodes.length===0 || !cached.edges || cached.edges.length===0){ setStatus('File mismatch ❌'); return; } activeProjectData.nodes = cached.nodes; activeProjectData.edges = cached.edges; renderGridFilters(); fillGridForFeederSearchSelect(); document.getElementById('drawBtn').disabled = false; setStatus(pName + ' Ready  ✅'); }
+
+    function dataURItoBlob(dataURI){ var parts = dataURI.split(','), mime = parts[0].match(/:(.*?);/)[1], byteString = atob(parts[1]), ab = new ArrayBuffer(byteString.length), ia = new Uint8Array(ab); for (var i=0; i<byteString.length; i++) ia[i] = byteString.charCodeAt(i); return new Blob([ab], { type: mime }); }
+    function exportPng(){ if (!cy) return; var dataUrl = cy.png({ full:true, scale:2 }); var blob = dataURItoBlob(dataUrl); saveAs(blob, 'Network_Export.png'); }
+    function exportPdf(){ if (!cy) return; var dataUrl = cy.png({ full:true, scale:1.5 }); pdfMake.createPdf({ content:[{ image:dataUrl, width:500 }] }).download('SLD_Report.pdf'); }
+
+    document.addEventListener('DOMContentLoaded', function(){
+      document.getElementById('gridSearchInput').addEventListener('input', filterGridList);
+      document.getElementById('selectAllGrids').addEventListener('click', toggleSelectAllHandler);
+      document.getElementById('applyFilterBtn').addEventListener('click', applyFilter);
+      document.getElementById('resetFilterBtn').addEventListener('click', resetFilter);
+      document.getElementById('gridForFeederSearch').addEventListener('change', populateFeederList);
+      document.getElementById('searchFeederBtn').addEventListener('click', searchFeeder);
+      document.getElementById('drawBtn').addEventListener('click', drawGraph);
+      document.getElementById('exportPngBtn').addEventListener('click', exportPng);
+      document.getElementById('exportPdfBtn').addEventListener('click', exportPdf);
+      document.getElementById('rectifyLoopsBtn').addEventListener('click', rectangularizeLoops);
+      var radios = document.querySelectorAll('input[name="smallLoopOrient"]');
+      for (var i=0; i<radios.length; i++){ radios[i].addEventListener('change', function(e){ smallLoopOrientation = e.target.value; }); }
+      document.getElementById('projectList').addEventListener('change', onProjectSelect);
+
+      document.getElementById('burgerButton').addEventListener('click', function(){ var ls = document.getElementById('leftSection'); ls.classList.toggle('show'); });
+
+      var preloadStatus = document.getElementById('preloadStatus'), projectList = document.getElementById('projectList');
+      var baseUrl = window.location.href.substring(0, window.location.href.lastIndexOf('/') + 1);
+      console.log('Loading from:', baseUrl);
+
+      fetchTextOrThrow(baseUrl + 'projects.csv').then(function(projectsCSV){
+        var parsed = parseCSVToArray(projectsCSV), projectNames = [];
+        for (var i=1; i<parsed.length; i++){ if (parsed[i] && parsed[i][0]) { projectNames.push(norm(parsed[i][0])); } }
+        
+        projectList.innerHTML = '<option value="" disabled selected>Select a Project...</option>';
+        for (var p=0; p<projectNames.length; p++){ var name = projectNames[p], opt = document.createElement('option'); opt.value = name; opt.text = name; projectList.add(opt); }
+        
+        setStatus('Data Loaded ✅');
+        preloadStatus.innerText = 'Preloading ' + projectNames.length + ' project(s)...';
+
+        var idx = 0;
+        function preloadNext(){
+          if (idx >= projectNames.length){ preloadStatus.innerText = '✅ All Ready'; return; }
+          var pName = projectNames[idx++];
+          Promise.all([ fetchTextOrThrow(baseUrl + pName + 'nodes.csv'), fetchTextOrThrow(baseUrl + pName + 'edges.csv') ])
+            .then(function(res){
+              projectDataCache[pName] = { nodes: parseCSVToArray(res[0]), edges: parseCSVToArray(res[1]) };
+              preloadStatus.innerText = '✅ ' + idx + '/' + projectNames.length + ': ' + pName;
+              preloadNext();
+            })
+            .catch(function(err){
+              console.error('Error loading ' + pName + ':', err);
+              projectDataCache[pName] = { nodes: [], edges: [] };
+              preloadStatus.innerText = '⚠️ ' + idx + '/' + projectNames.length + ' (some missing)';
+              preloadNext();
+            });
+        }
+        preloadNext();
+      }).catch(function(err){
+        console.error('Failed to load projects.csv:', err);
+        setStatus('Failed to load ❌');
+        preloadStatus.innerText = '❌ Cannot load from: ' + baseUrl + 'projects.csv';
+      });
+    });
+  </script>
+</body>
+</html>
