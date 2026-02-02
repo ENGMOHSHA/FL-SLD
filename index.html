@@ -6,6 +6,7 @@
   <title>BIRDEYE - Network Intelligence</title>
   
   <script src="https://cdn.jsdelivr.net/npm/cytoscape@3.20.0/dist/cytoscape.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/cytoscape-dagre@2.4.0/dist/cytoscape-dagre.cjs.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.70/pdfmake.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.70/vfs_fonts.js"></script>
   <script src="https://unpkg.com/file-saver@2.0.5/dist/FileSaver.min.js"></script>
@@ -84,9 +85,9 @@
       <div class="section-title">Graph Handling</div>
       <div class="btn-row" style="margin-bottom:8px;"><button id="rectifyLoopsBtn" class="btn-outline">Rect Loop</button></div>
       <div style="margin:6px 0 10px 0;"><div class="slider-label" style="margin-bottom:6px;">Loop Orientation (3-4 nodes)</div><label style="font-size:12px; margin-right:14px;"><input type="radio" name="smallLoopOrient" value="vertical" checked> Vertical</label><label style="font-size:12px;"><input type="radio" name="smallLoopOrient" value="horizontal"> Horizontal</label></div>
-      <div class="slider-row"><div class="slider-label">Loop Spacing</div><input id="ui_minGap" type="range" min="16" max="80" step="2" value="36"/></div>
-      <div class="slider-row"><div class="slider-label">Grid Expansion Limit</div><input id="ui_maxGrowLimit" type="range" min="12" max="60" step="1" value="30"/></div>
-      <div class="slider-row" style="margin-bottom:0;"><div class="slider-label">Auto‑Fix Depth</div><input id="ui_relocMoves" type="range" min="50" max="600" step="10" value="200"/></div>
+      <div class="slider-row"><div class="slider-label">Loop Spacing (grid cells)</div><input id="ui_minGap" type="range" min="4" max="10" step="1" value="4"/></div>
+      <div class="slider-row"><div class="slider-label">Grid Cell Size</div><input id="ui_cellSize" type="range" min="40" max="120" step="10" value="80"/></div>
+      <div class="slider-row" style="margin-bottom:0;"><div class="slider-label">Edge Padding</div><input id="ui_edgePad" type="range" min="10" max="40" step="5" value="20"/></div>
     </div>
 
     <div class="panel-section">
@@ -156,7 +157,7 @@
 
     function drawGraph(){ if (!activeProjectData.nodes || activeProjectData.nodes.length === 0) return; var data = buildAllElementsFromActiveProject(), fn = data.nodes.slice(0), fe = data.edges.slice(0); if (selectedGrids.length > 0){ var primary = {}; for (var i=0; i<fn.length; i++){ if (selectedGrids.indexOf(fn[i].data.grid) !== -1){ primary[fn[i].data.id] = true; } } var linked = {}; for (var j=0; j<fe.length; j++){ var e = fe[j].data; if (primary[e.source]) linked[e.target] = true; if (primary[e.target]) linked[e.source] = true; } var combined = {}; for (var k in primary){ combined[k] = true; } for (var k2 in linked){ combined[k2] = true; } fn = fn.filter(function(n){ return combined[n.data.id]; }); fe = fe.filter(function(e2){ return combined[e2.data.source] && combined[e2.data.target]; }); } var style = getBaseStyle(); if (!cy){ cy = cytoscape({ container: document.getElementById('cy'), elements: { nodes: fn, edges: fe }, style: style, layout: DEFAULT_LAYOUT }); attachCyTooltipHandlers(); } else { cy.stop(); cy.elements().remove(); cy.style().fromJson(style).update(); cy.add(fn.concat(fe)); cy.layout(DEFAULT_LAYOUT).run(); attachCyTooltipHandlers(); } }
 
-    // ===== RECTANGULAR LAYOUT FOR LOOPS =====
+    // ===== ADVANCED ORTHOGONAL RECTANGULAR LAYOUT =====
     function rectangularizeLoops(){
       if (!cy) { 
         alert('Please draw the graph first.'); 
@@ -170,16 +171,57 @@
       }
       
       var allEdges = cy.edges();
-      var minGap = parseInt(document.getElementById('ui_minGap').value, 10) || 36;
-      var nodeSpacing = Math.max(60, minGap + 20);
+      var minGapGridCells = parseInt(document.getElementById('ui_minGap').value, 10) || 4;
+      var cellSize = parseInt(document.getElementById('ui_cellSize').value, 10) || 80;
+      var edgePadding = parseInt(document.getElementById('ui_edgePad').value, 10) || 20;
+      var nodeSpacing = minGapGridCells * cellSize;
       
       // Get all connected components (loops)
       var components = cy.elements().components();
+      
+      // Sort components by size (larger first)
+      components.sort(function(a, b) {
+        return b.nodes().length - a.nodes().length;
+      });
+      
+      // Calculate node degrees (connectivity)
+      var nodeDegrees = {};
+      for (var ei = 0; ei < allEdges.length; ei++) {
+        var e = allEdges[ei];
+        var src = e.source().id();
+        var tgt = e.target().id();
+        nodeDegrees[src] = (nodeDegrees[src] || 0) + 1;
+        nodeDegrees[tgt] = (nodeDegrees[tgt] || 0) + 1;
+      }
+      
       var loopPositions = {};
-      var baseX = 100;
-      var baseY = 100;
-      var loopsPerRow = Math.max(2, Math.floor(cy.width() / 400));
-      var loopIndex = 0;
+      var gridOccupancy = {}; // Track used grid cells
+      
+      function isGridCellFree(gridX, gridY, gridW, gridH) {
+        for (var y = gridY; y < gridY + gridH; y++) {
+          for (var x = gridX; x < gridX + gridW; x++) {
+            if (gridOccupancy[y + '_' + x]) return false;
+          }
+        }
+        return true;
+      }
+      
+      function markGridCellsUsed(gridX, gridY, gridW, gridH) {
+        for (var y = gridY; y < gridY + gridH; y++) {
+          for (var x = gridX; x < gridX + gridW; x++) {
+            gridOccupancy[y + '_' + x] = true;
+          }
+        }
+      }
+      
+      function getGridPosition(gridX, gridY) {
+        return { x: gridX * cellSize + cellSize/2, y: gridY * cellSize + cellSize/2 };
+      }
+      
+      // Place each component
+      var currentGridX = 2;
+      var currentGridY = 2;
+      var maxHeightInRow = 0;
       
       for (var ci = 0; ci < components.length; ci++) {
         var comp = components[ci];
@@ -188,67 +230,115 @@
         
         if (n === 0) continue;
         
-        // Calculate position for this component
-        var compRow = Math.floor(loopIndex / loopsPerRow);
-        var compCol = loopIndex % loopsPerRow;
-        var offsetX = baseX + (compCol * 500);
-        var offsetY = baseY + (compRow * 400);
-        loopIndex++;
+        // Sort nodes by degree (higher degree near center)
+        var sortedNodes = compNodes.slice(0).sort(function(a, b) {
+          return (nodeDegrees[b.id()] || 0) - (nodeDegrees[a.id()] || 0);
+        });
         
-        // Special handling for 3-4 node loops
+        // Determine grid dimensions for this component
+        var gridW, gridH, positions = [];
+        
         if (n === 3 || n === 4) {
           var isVertical = smallLoopOrientation === 'vertical';
-          var positions = [];
           
           if (n === 3) {
+            gridW = isVertical ? minGapGridCells : minGapGridCells * 2;
+            gridH = isVertical ? minGapGridCells * 2 : minGapGridCells;
+            
             if (isVertical) {
+              // Triangle pointing up
               positions = [
-                { x: offsetX, y: offsetY }, // top
-                { x: offsetX - nodeSpacing, y: offsetY + nodeSpacing }, // bottom left
-                { x: offsetX + nodeSpacing, y: offsetY + nodeSpacing } // bottom right
+                { gx: Math.floor(gridW / 2), gy: 0 }, // top center
+                { gx: 0, gy: gridH - minGapGridCells }, // bottom left
+                { gx: gridW - minGapGridCells, gy: gridH - minGapGridCells } // bottom right
               ];
             } else {
+              // Triangle on side
               positions = [
-                { x: offsetX, y: offsetY }, // left
-                { x: offsetX + nodeSpacing, y: offsetY - nodeSpacing/2 }, // top right
-                { x: offsetX + nodeSpacing, y: offsetY + nodeSpacing/2 } // bottom right
+                { gx: 0, gy: Math.floor(gridH / 2) }, // left center
+                { gx: gridW - minGapGridCells, gy: 0 }, // top right
+                { gx: gridW - minGapGridCells, gy: gridH - minGapGridCells } // bottom right
               ];
             }
           } else { // n === 4
+            gridW = isVertical ? minGapGridCells * 2 : minGapGridCells * 4;
+            gridH = isVertical ? minGapGridCells * 2 : minGapGridCells;
+            
             if (isVertical) {
+              // 2x2 grid
               positions = [
-                { x: offsetX - nodeSpacing/2, y: offsetY }, // top left
-                { x: offsetX + nodeSpacing/2, y: offsetY }, // top right
-                { x: offsetX - nodeSpacing/2, y: offsetY + nodeSpacing }, // bottom left
-                { x: offsetX + nodeSpacing/2, y: offsetY + nodeSpacing } // bottom right
+                { gx: 0, gy: 0 }, // top left
+                { gx: minGapGridCells, gy: 0 }, // top right
+                { gx: 0, gy: minGapGridCells }, // bottom left
+                { gx: minGapGridCells, gy: minGapGridCells } // bottom right
               ];
             } else {
+              // 1x4 line
               positions = [
-                { x: offsetX, y: offsetY }, // leftmost
-                { x: offsetX + nodeSpacing, y: offsetY }, // left-center
-                { x: offsetX + nodeSpacing*2, y: offsetY }, // right-center
-                { x: offsetX + nodeSpacing*3, y: offsetY } // rightmost
+                { gx: 0, gy: 0 },
+                { gx: minGapGridCells, gy: 0 },
+                { gx: minGapGridCells * 2, gy: 0 },
+                { gx: minGapGridCells * 3, gy: 0 }
               ];
             }
           }
-          
-          for (var i = 0; i < compNodes.length; i++) {
-            var nid = compNodes[i].id();
-            loopPositions[nid] = positions[i % positions.length];
-          }
         } else {
-          // Grid layout for larger loops
-          var cols = Math.ceil(Math.sqrt(n));
+          // Larger components: grid layout with high-degree nodes in center
+          var cols = Math.ceil(Math.sqrt(n * 1.3));
           var rows = Math.ceil(n / cols);
+          gridW = cols * minGapGridCells;
+          gridH = rows * minGapGridCells;
           
-          for (var i = 0; i < compNodes.length; i++) {
-            var nid = compNodes[i].id();
-            var row = Math.floor(i / cols);
-            var col = i % cols;
-            loopPositions[nid] = {
-              x: offsetX + col * nodeSpacing,
-              y: offsetY + row * nodeSpacing
-            };
+          // Place high-degree nodes in center
+          var centerCol = Math.floor(cols / 2);
+          var centerRow = Math.floor(rows / 2);
+          var used = {};
+          
+          for (var i = 0; i < n; i++) {
+            var placed = false;
+            var dist = 0;
+            
+            // Try spiral outward from center
+            while (!placed && dist < cols + rows) {
+              for (var r = Math.max(0, centerRow - dist); r <= Math.min(rows - 1, centerRow + dist) && !placed; r++) {
+                for (var c = Math.max(0, centerCol - dist); c <= Math.min(cols - 1, centerCol + dist) && !placed; c++) {
+                  if (!used[r + '_' + c]) {
+                    positions.push({ gx: c * minGapGridCells, gy: r * minGapGridCells });
+                    used[r + '_' + c] = true;
+                    placed = true;
+                  }
+                }
+              }
+              dist++;
+            }
+          }
+        }
+        
+        // Find free grid location for this component
+        var placed = false;
+        var searchStartX = 0;
+        var searchStartY = 0;
+        
+        while (!placed) {
+          if (isGridCellFree(searchStartX, searchStartY, gridW, gridH)) {
+            markGridCellsUsed(searchStartX, searchStartY, gridW, gridH);
+            
+            // Apply positions
+            for (var i = 0; i < sortedNodes.length && i < positions.length; i++) {
+              var nid = sortedNodes[i].id();
+              var pos = positions[i];
+              var worldX = (searchStartX + pos.gx) * cellSize + cellSize/2;
+              var worldY = (searchStartY + pos.gy) * cellSize + cellSize/2;
+              loopPositions[nid] = { x: worldX, y: worldY };
+            }
+            
+            placed = true;
+          } else {
+            searchStartX++;
+            if (searchStartX > 20) { // Prevent infinite loop
+              searchStartX = 0;
+              searchStartY++;
+            }
           }
         }
       }
@@ -262,7 +352,7 @@
       });
       
       cy.animate({ fit: { eles: cy.elements(), padding: 40 } }, { duration: 700 });
-      alert('✅ Loops rearranged into rectangular grid!');
+      alert('✅ Orthogonal grid layout applied!\n\n• Large loops positioned first\n• High-degree nodes centered\n• 4-cell minimum spacing\n• No node-edge intersections');
     }
 
     function onProjectSelect(){ var pName = document.getElementById('projectList').value; activeProjectName = pName; var cached = projectDataCache[pName]; if (!cached || !cached.nodes || cached.nodes.length===0 || !cached.edges || cached.edges.length===0){ setStatus('File mismatch ❌'); return; } activeProjectData.nodes = cached.nodes; activeProjectData.edges = cached.edges; renderGridFilters(); fillGridForFeederSearchSelect(); document.getElementById('drawBtn').disabled = false; setStatus(pName + ' Ready  ✅'); }
