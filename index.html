@@ -1,0 +1,1286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>BIRDEYE - Network Intelligence</title>
+
+  <!-- External libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/cytoscape@3.20.0/dist/cytoscape.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.70/pdfmake.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.70/vfs_fonts.js"></script>
+  <script src="https://unpkg.com/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      display: flex; height: 100vh;
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      overflow: hidden;
+    }
+
+    /* Side Panel */
+    #leftSection {
+      display: none; flex-direction: column; gap: 12px; padding: 20px;
+      height: 100vh; width: 360px; position: fixed; top: 0; left: 0;
+      background: rgba(255, 255, 255, 0.98); backdrop-filter: blur(10px);
+      z-index: 1000; box-shadow: 4px 0 20px rgba(0, 0, 0, 0.15);
+      overflow-y: auto;
+    }
+    #leftSection.show { display: flex; }
+
+    #burgerButton {
+      position: fixed; top: 20px; left: 20px; cursor: pointer;
+      z-index: 2000;
+      background: white; width: 45px; height: 45px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); font-size: 20px;
+      pointer-events: auto; user-select: none;
+    }
+
+    .brand {
+      font-size: 24px; font-weight: bold; text-align: center; margin-bottom: 2px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .dev-credit { font-size: 11px; text-align: center; color: #764ba2; font-weight: 600; margin-bottom: 10px; }
+
+    .panel-section { background: #ffffff; border: 2px solid #eef0ff; border-radius: 10px; padding: 12px; }
+    .section-title { font-size: 11px; font-weight: 800; text-transform: uppercase; color: #666; letter-spacing: 0.5px; margin-bottom: 8px; }
+    .divider { height: 1px; background: #eee; margin: 10px 0; }
+
+    select, input[type="text"] {
+      padding: 10px; border: 1px solid #ddd; border-radius: 6px;
+      font-size: 13px; width: 100%; outline: none; background: #fff;
+    }
+    button {
+      padding: 12px; border: none; border-radius: 6px; font-weight: 700;
+      cursor: pointer; color: white; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      font-size: 11px; text-transform: uppercase;
+    }
+    #drawBtn { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); }
+    #drawBtn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+    .btn-row { display: flex; gap: 8px; }
+    .btn-outline { background: #555; }
+    .btn-danger { background: #ff4b2b; }
+    .btn-info { background: #4facfe; }
+
+    #gridFilterContainer {
+      height: 250px; min-height: 250px;
+      overflow-y: auto; background: #ffffff; padding: 8px;
+      border-radius: 8px; border: 2px solid #667eea;
+    }
+    .grid-item { display: flex; align-items: center; gap: 10px; padding: 8px; font-size: 13px; border-bottom: 1px solid #f0f0f0; }
+    .grid-item:hover { background: #f0f4ff; }
+
+    #status { font-size: 10px; text-align: center; font-weight: bold; color: #764ba2; padding-bottom: 5px; }
+
+    #cy {
+      flex-grow: 1; margin: 20px 20px 20px 80px; background: white;
+      border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+      position: relative; z-index: 1;
+    }
+
+    /* Tooltip */
+    #tooltip {
+      position: fixed;
+      display: none;
+      max-width: 260px;
+      background: rgba(0,0,0,0.85);
+      color: #fff;
+      padding: 8px 10px;
+      border-radius: 8px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+      font-size: 12px;
+      line-height: 1.35;
+      z-index: 3000;
+      pointer-events: none;
+      white-space: pre-line;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="burgerButton">☰</div>
+
+  <div id="leftSection">
+    <div class="brand">🦅 BIRDEYE</div>
+    <div class="dev-credit">Developed by Eng. Mohamad Shaban</div>
+    <div id="status">Preparing…</div>
+
+    <!-- 1) Project Selection -->
+    <div class="panel-section">
+      <div class="section-title">1) Project Selection</div>
+      <select id="projectList">
+        <option disabled selected>Select a Project...</option>
+      </select>
+      <div class="divider"></div>
+      <div id="preloadStatus" style="font-size:12px; color:#666;"></div>
+    </div>
+
+    <!-- 2) Filter by Grid -->
+    <div class="panel-section">
+      <div class="section-title">2) Filter by Grid Station</div>
+      <input type="text" id="gridSearchInput" placeholder="Search grids...">
+      <div style="display:flex; align-items:center; gap:8px; padding:6px 0;">
+        <input type="checkbox" id="selectAllGrids">
+        <label for="selectAllGrids" style="font-size:12px; font-weight: bold; color:#444;">Select All (visible)</label>
+      </div>
+      <div id="gridFilterContainer">
+        <p id="emptyMsg" style="font-size:11px; color:#aaa; text-align:center; margin-top:40px;">
+          select project to load grids
+        </p>
+      </div>
+      <div class="btn-row" style="margin-top:8px;">
+        <button id="applyFilterBtn" class="btn-info" style="flex:1;">Apply</button>
+        <button id="resetFilterBtn" class="btn-danger" style="flex:1;">Reset</button>
+      </div>
+    </div>
+
+    <!-- 3) Feeder Search -->
+    <div class="panel-section">
+      <div class="section-title">3) Feeder Search</div>
+      <label for="gridForFeederSearch" style="font-size:12px; color:#444;">Select Grid Station</label>
+      <select id="gridForFeederSearch">
+        <option value="" selected disabled>Choose grid…</option>
+      </select>
+
+      <div style="height:8px;"></div>
+
+      <label for="feederList" style="font-size:12px; color:#444;">Select Feeder</label>
+      <select id="feederList">
+        <option value="" selected disabled>Choose feeder…</option>
+      </select>
+
+      <div class="btn-row" style="margin-top:8px;">
+        <button id="searchFeederBtn">Search & Highlight</button>
+      </div>
+    </div>
+
+    <!-- 4) Graph Actions -->
+    <div class="panel-section">
+      <div class="section-title">4) Graph Actions</div>
+      <div class="btn-row" style="margin-top:0;">
+        <button id="drawBtn" disabled>DRAW FL-SLD</button>
+        <button id="rectifyLoopsBtn" class="btn-outline" title="Distribute each loop">Rect Loop</button>
+      </div>
+      <!-- Orientation for 3–4 feeders -->
+      <div style="margin-top:8px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+        <span style="font-size:12px;color:#444;font-weight:600;">3–4 feeder orientation:</span>
+        <label style="font-size:12px;"><input type="radio" name="smallLoopOrient" value="vertical" checked> Vertical</label>
+        <label style="font-size:12px;"><input type="radio" name="smallLoopOrient" value="horizontal"> Horizontal</label>
+      </div>
+    </div>
+
+    <!-- 5) Export -->
+    <div class="panel-section">
+      <div class="section-title">5) Export</div>
+      <div class="btn-row">
+        <button id="exportPdfBtn" class="btn-outline" style="flex:1;">PDF</button>
+        <button id="exportPngBtn" class="btn-outline" style="flex:1;">PNG</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="cy"></div>
+
+  <!-- Tooltip -->
+  <div id="tooltip"></div>
+
+  <!-- SCRIPT 1: Burger only -->
+  <script>
+    (function(){
+      function toggleLeftSection(){
+        var ls = document.getElementById('leftSection');
+        var showing = (ls.style.display === 'flex' || ls.classList.contains('show'));
+        ls.style.display = showing ? 'none' : 'flex';
+        if (!showing) { ls.classList.add('show'); } else { ls.classList.remove('show'); }
+      }
+      window.toggleLeftSection = toggleLeftSection;
+      document.addEventListener('DOMContentLoaded', function(){
+        var burger = document.getElementById('burgerButton');
+        if (burger) { burger.addEventListener('click', toggleLeftSection); }
+      });
+    })();
+  </script>
+
+  <!-- SCRIPT 2: Main app -->
+  <script>
+    /* -----------------------------
+     * Global state & constants
+     * ---------------------------*/
+    var cy = null;
+    var selectedGrids = [];
+    var activeProjectName = '';
+    var activeProjectData = { nodes: [], edges: [] };
+    var projectDataCache = {}; // name -> {nodes:Array, edges:Array}
+
+    var DEFAULT_LAYOUT = { name: 'cose', padding: 30, animate: true };
+    var smallLoopOrientation = 'vertical'; // 'vertical' | 'horizontal'
+
+    /* -----------------------------
+     * Utilities
+     * ---------------------------*/
+    function norm(v){ return (v == null ? '' : (''+v)).replace(/\uFEFF/g,'').trim(); }
+    function setStatus(msg){ var el = document.getElementById('status'); if (el) el.innerText = msg; }
+
+    function fetchTextOrThrow(path){
+      return fetch(path).then(function(res){
+        if (!res.ok) throw new Error('Failed to fetch ' + path);
+        return res.text();
+      });
+    }
+    function parseCSVToArray(csvText){ return Papa.parse(csvText, { skipEmptyLines: true }).data; }
+
+    function getBaseStyle(){
+      return [
+        { selector:'node', style:{
+            'background-color':'data(color)', 'label':'data(label)', 'shape':'data(shape)',
+            'width':35, 'height':35, 'text-valign':'center', 'font-size':8, 'color':'#000',
+            'text-outline-width':1, 'text-outline-color':'#fff', 'border-width':1, 'border-color':'#333'
+        } },
+        { selector:'edge', style:{ 'width':2, 'line-color':'#999', 'curve-style':'bezier' } },
+        { selector:'node.cy-highlighted', style:{ 'border-width':6, 'border-color':'#FFD700' } }
+      ];
+    }
+
+    /* -----------------------------
+     * Build elements
+     * ---------------------------*/
+    function buildAllElementsFromActiveProject(){
+      var allNodes = [];
+      for (var i=1; i<activeProjectData.nodes.length; i++){
+        var row = activeProjectData.nodes[i]; if (!row) continue;
+        var id = norm(row[0]);
+        var label = norm(row[1]);
+        var shape = norm(row[2]) || 'ellipse';
+        var color = norm(row[3]) || '#8faadc';
+        var grid = norm(row[4]);
+        var load = (row.length > 5) ? norm(row[5]) : '';
+
+        allNodes.push({ data: { id:id, label:label, shape:shape.toLowerCase(), color:color, grid:grid, load:load } });
+      }
+      var allEdges = [];
+      for (var j=1; j<activeProjectData.edges.length; j++){
+        var erow = activeProjectData.edges[j]; if (!erow) continue;
+        allEdges.push({ data: { id: norm(erow[0]), source: norm(erow[1]), target: norm(erow[2]) } });
+      }
+      return { nodes: allNodes, edges: allEdges };
+    }
+
+    /* -----------------------------
+     * Tooltip helpers
+     * ---------------------------*/
+    var _tooltipNodeId = null;
+
+    function showTooltipForNode(node){
+      var t = document.getElementById('tooltip');
+      if (!t || !cy || !node || !node.isNode || !node.isNode()) return;
+
+      var label = norm(node.data('label'));
+      var grid  = norm(node.data('grid'));
+      var load  = norm(node.data('load'));
+
+      var parts = [ 'Feeder: ' + label, 'Grid: ' + grid ];
+      if (load) parts.push('Load: ' + load);
+      t.textContent = parts.join('\n');
+
+      var rp = node.renderedPosition();
+      var rect = cy.container().getBoundingClientRect();
+      var offsetX = 14, offsetY = -10;
+      var left = Math.round(rect.left + rp.x + offsetX);
+      var top  = Math.round(rect.top  + rp.y + offsetY);
+
+      t.style.left = left + 'px';
+      t.style.top  = top  + 'px';
+      t.style.display = 'block';
+
+      _tooltipNodeId = node.id();
+    }
+    function hideTooltip(){ var t = document.getElementById('tooltip'); if (!t) return; t.style.display='none'; _tooltipNodeId = null; }
+    function updateTooltipPositionIfVisible(){
+      if (!_tooltipNodeId || !cy) return;
+      var node = cy.getElementById(_tooltipNodeId);
+      if (node && node.length){ showTooltipForNode(node); } else { hideTooltip(); }
+    }
+
+    function onNodeTap(evt){ showTooltipForNode(evt.target); }
+    function onCoreTap(evt){ if (evt.target === cy) hideTooltip(); }
+    function onViewportChange(){ updateTooltipPositionIfVisible(); }
+
+    function attachCyTooltipHandlers(){
+      if (!cy) return;
+      cy.off('tap', 'node', onNodeTap);
+      cy.off('tap', onCoreTap);
+      cy.off('zoom', onViewportChange);
+      cy.off('pan', onViewportChange);
+      cy.off('dragfree', onViewportChange);
+      cy.off('position', onViewportChange);
+
+      cy.on('tap', 'node', onNodeTap);
+      cy.on('tap', onCoreTap);
+      cy.on('zoom', onViewportChange);
+      cy.on('pan', onViewportChange);
+      cy.on('dragfree', onViewportChange);
+      cy.on('position', onViewportChange);
+    }
+
+    /* -----------------------------
+     * Ensure full render
+     * ---------------------------*/
+    function ensureFullGraphRenderedAsync(done){
+      var data = buildAllElementsFromActiveProject();
+      var style = getBaseStyle();
+      if (!cy){
+        cy = cytoscape({ container: document.getElementById('cy'), elements: data, style: style, layout: DEFAULT_LAYOUT });
+        cy.one('layoutstop', function(){ if (typeof done === 'function') done(); });
+        attachCyTooltipHandlers();
+      } else {
+        cy.stop();
+        cy.elements().remove();
+        cy.style().fromJson(style).update();
+        cy.add(data.nodes.concat(data.edges));
+        var layout = cy.layout(DEFAULT_LAYOUT);
+        cy.one('layoutstop', function(){ if (typeof done === 'function') done(); });
+        layout.run();
+        attachCyTooltipHandlers();
+      }
+    }
+
+    /* -----------------------------
+     * Grid filter UI
+     * ---------------------------*/
+    function renderGridFilters(){
+      var container = document.getElementById('gridFilterContainer');
+      container.innerHTML = '';
+      if (!activeProjectData.nodes || activeProjectData.nodes.length === 0){
+        container.innerHTML = '<p style="font-size:11px;color:#aaa;text-align:center;margin-top:40px;">Select a project to load grids</p>';
+        return;
+      }
+      var map = {};
+      for (var i=1; i<activeProjectData.nodes.length; i++){
+        var row = activeProjectData.nodes[i]; if (!row) continue;
+        var g = norm(row[4]); if (g) map[g] = true;
+      }
+      var grids = Object.keys(map).sort();
+      if (grids.length === 0){
+        container.innerHTML = '<p style="font-size:11px;color:#aaa;text-align:center;margin-top:40px;">No grids found in nodes CSV (column index 4)</p>';
+        return;
+      }
+      for (var k=0; k<grids.length; k++){
+        var grid = grids[k];
+        var div = document.createElement('div');
+        div.className = 'grid-item';
+        div.innerHTML = '<input type="checkbox" class="grid-chk" value="'+grid+'"> <span class="grid-name-label">'+grid+'</span>';
+        container.appendChild(div);
+      }
+    }
+    function filterGridList(){
+      var val = norm(document.getElementById('gridSearchInput').value).toLowerCase();
+      var items = document.querySelectorAll('.grid-item');
+      for (var i=0; i<items.length; i++){
+        var label = items[i].querySelector('.grid-name-label');
+        var text = label ? norm(label.innerText).toLowerCase() : '';
+        items[i].style.display = (text.indexOf(val) !== -1) ? 'flex' : 'none';
+      }
+    }
+    function toggleSelectAllHandler(){
+      var source = document.getElementById('selectAllGrids');
+      var cbs = document.querySelectorAll('.grid-chk');
+      for (var i=0; i<cbs.length; i++){
+        if (cbs[i].parentElement && cbs[i].parentElement.style.display !== 'none'){
+          cbs[i].checked = source.checked;
+        }
+      }
+    }
+    function applyFilter(){
+      var cbs = document.querySelectorAll('.grid-chk:checked');
+      var arr = [];
+      for (var i=0; i<cbs.length; i++){ arr.push(cbs[i].value); }
+      selectedGrids = arr;
+
+      alert(
+        (selectedGrids.length > 0 ? ('Filtering ' + selectedGrids.length + ' Grids') : 'All Grids Selected')
+        + '\n\nFeeders of selected grids will be shown with only direct interconnected feeders'
+      );
+    }
+    function resetFilter(){
+      selectedGrids = [];
+      var cbs = document.querySelectorAll('.grid-chk');
+      for (var i=0; i<cbs.length; i++){ cbs[i].checked = false; }
+      var selAll = document.getElementById('selectAllGrids'); if (selAll) selAll.checked = false;
+      var inp = document.getElementById('gridSearchInput'); if (inp) inp.value = '';
+      filterGridList();
+    }
+
+    /* -----------------------------
+     * Feeder Search
+     * ---------------------------*/
+    function fillGridForFeederSearchSelect(){
+      var gridSelect = document.getElementById('gridForFeederSearch');
+      gridSelect.innerHTML = '<option value="" selected disabled>Choose grid…</option>';
+      var map = {};
+      for (var i=1; i<activeProjectData.nodes.length; i++){
+        var row = activeProjectData.nodes[i]; if (!row) continue;
+        var g = norm(row[4]); if (g) map[g] = true;
+      }
+      var grids = Object.keys(map).sort();
+      for (var k=0; k<grids.length; k++){
+        var opt = document.createElement('option'); opt.value = grids[k]; opt.text = grids[k];
+        gridSelect.add(opt);
+      }
+      var feederSelect = document.getElementById('feederList');
+      feederSelect.innerHTML = '<option value="" selected disabled>Choose feeder…</option>';
+    }
+
+    function populateFeederList(){
+      var feederSelect = document.getElementById('feederList');
+      feederSelect.innerHTML = '<option value="" selected disabled>Choose feeder…</option>';
+      var gridSel = norm(document.getElementById('gridForFeederSearch').value);
+      if (!gridSel) return;
+
+      var rows = activeProjectData.nodes.slice(1);
+      var seen = {};
+      for (var i=0; i<rows.length; i++){
+        var r = rows[i]; if (!r) continue;
+        var id = norm(r[0]), label = norm(r[1]), grid = norm(r[4]);
+        if (!id || !label) continue;
+        if (grid === gridSel && !seen[label]) {
+          var o = document.createElement('option');
+          o.value = id; o.text = label;
+          o.setAttribute('data-label', label);
+          o.setAttribute('data-grid', grid);
+          feederSelect.add(o);
+          seen[label] = true;
+        }
+      }
+    }
+
+    function flickerNode(ele, times){
+      if (typeof times === 'undefined') times = 3;
+      var count = 0;
+      var interval = setInterval(function(){
+        ele.toggleClass('cy-highlighted');
+        count++;
+        if (count >= times*2){ clearInterval(interval); ele.removeClass('cy-highlighted'); }
+      }, 250);
+    }
+
+    function searchFeeder(){
+      if (!activeProjectData.nodes || activeProjectData.nodes.length === 0){
+        alert('Please select a project first.'); return;
+      }
+
+      var gridSel = norm(document.getElementById('gridForFeederSearch').value);
+      var feederList = document.getElementById('feederList');
+      if (!feederList || feederList.selectedIndex < 0){
+        alert('Select a feeder (node) to search.'); return;
+      }
+
+      var selectedLabel = norm(
+        feederList.options[feederList.selectedIndex].getAttribute('data-label') ||
+        feederList.options[feederList.selectedIndex].text
+      );
+      var selectedGrid  = norm(
+        feederList.options[feederList.selectedIndex].getAttribute('data-grid') ||
+        gridSel
+      );
+
+      if (!selectedLabel || !selectedGrid){
+        alert('Select grid and feeder (node) first.'); return;
+      }
+
+      var hasFilter = Array.isArray(selectedGrids) && selectedGrids.length > 0;
+
+      function findCandidatesInCurrentCy(){
+        if (!cy) return null;
+        var candidates = cy.nodes().filter(function(n){
+          var nLabel = norm(n.data('label'));
+          var nGrid  = norm(n.data('grid'));
+          return (nLabel.toLowerCase() === selectedLabel.toLowerCase()) && (nGrid === selectedGrid);
+        });
+        if (!candidates || candidates.length === 0){
+          candidates = cy.nodes().filter(function(n){
+            return norm(n.data('label')).toLowerCase() === selectedLabel.toLowerCase();
+          });
+        }
+        return (candidates && candidates.length > 0) ? candidates : null;
+      }
+
+      function highlightInCurrentCyOrWarn(){
+        var candidates = findCandidatesInCurrentCy();
+        if (candidates){
+          var target = candidates[0];
+          cy.animate({ center: { eles: target }, zoom: Math.min(2, cy.maxZoom() || 2) }, { duration: 600 });
+          flickerNode(target, 3);
+          return true;
+        } else {
+          if (hasFilter){
+            alert(
+              'A Grid Station filter is active.\n' +
+              'The selected feeder is outside the current filter.\n' +
+              'Cancel the filter to show this feeder.'
+            );
+            return false;
+          } else {
+            alert('Feeder node "' + selectedLabel + '" not found.');
+            return false;
+          }
+        }
+      }
+
+      if (hasFilter){
+        if (!cy){
+          drawGraph();
+          if (cy){
+            var runAfter = function(){ highlightInCurrentCyOrWarn(); };
+            cy.one('layoutstop', runAfter);
+          }
+        } else {
+          highlightInCurrentCyOrWarn();
+        }
+      } else {
+        ensureFullGraphRenderedAsync(function(){
+          var candidates = cy.nodes().filter(function(n){
+            var nLabel = norm(n.data('label'));
+            var nGrid  = norm(n.data('grid'));
+            return (nLabel.toLowerCase() === selectedLabel.toLowerCase()) && (nGrid === selectedGrid);
+          });
+          if (!candidates || candidates.length === 0){
+            candidates = cy.nodes().filter(function(n){
+              return norm(n.data('label')).toLowerCase() === selectedLabel.toLowerCase();
+            });
+          }
+          if (!candidates || candidates.length === 0){
+            alert('Feeder node "' + selectedLabel + '" not found.');
+            return;
+          }
+          var target = candidates[0];
+          cy.animate({ center: { eles: target }, zoom: Math.min(2, cy.maxZoom() || 2) }, { duration: 600 });
+          flickerNode(target, 3);
+        });
+      }
+    }
+
+    /* -----------------------------
+     * Draw graph with grid filter
+     * ---------------------------*/
+    function drawGraph(){
+      if (!activeProjectData.nodes || activeProjectData.nodes.length === 0) return;
+
+      var data = buildAllElementsFromActiveProject();
+      var fn = data.nodes.slice(0);
+      var fe = data.edges.slice(0);
+
+      if (selectedGrids.length > 0){
+        var primary = {};
+        for (var i=0; i<fn.length; i++){ if (selectedGrids.indexOf(fn[i].data.grid) !== -1){ primary[fn[i].data.id] = true; } }
+        var linked = {};
+        for (var j=0; j<fe.length; j++){
+          var e = fe[j].data;
+          if (primary[e.source]) linked[e.target] = true;
+          if (primary[e.target]) linked[e.source] = true;
+        }
+        var combined = {};
+        for (var k in primary){ combined[k] = true; }
+        for (var k2 in linked){ combined[k2] = true; }
+        fn = fn.filter(function(n){ return combined[n.data.id]; });
+        fe = fe.filter(function(e2){ return combined[e2.data.source] && combined[e2.data.target]; });
+      }
+
+      var style = getBaseStyle();
+      if (!cy){
+        cy = cytoscape({ container: document.getElementById('cy'), elements: { nodes: fn, edges: fe }, style: style, layout: DEFAULT_LAYOUT });
+        attachCyTooltipHandlers();
+      } else {
+        cy.stop(); cy.elements().remove(); cy.style().fromJson(style).update(); cy.add(fn.concat(fe));
+        cy.layout(DEFAULT_LAYOUT).run();
+        attachCyTooltipHandlers();
+      }
+    }
+
+    /* ===========================================================
+     * Rect Loop v7 — terminals on outer rings; interior center-first; crossing-aware; AR ≤ 1.5; ≤ ~5s
+     * ===========================================================
+     */
+
+    // --- BFS order from highest-degree node ---
+    function bfsOrderWithin(nodesColl) {
+      if (!nodesColl || nodesColl.length === 0) return [];
+      var root = nodesColl.max(function(n){ return n.degree(); }).ele;
+      var visited = {}; var order = []; var q = [root]; visited[root.id()] = true;
+      while(q.length){
+        var v = q.shift(); order.push(v);
+        var neigh = v.neighborhood('node').intersection(nodesColl);
+        for (var i = 0; i < neigh.length; i++) {
+          var u = neigh[i]; var uid = u.id();
+          if (!visited[uid]){ visited[uid] = true; q.push(u); }
+        }
+      }
+      for (var j = 0; j < nodesColl.length; j++) {
+        var n = nodesColl[j]; if (!visited[n.id()]) order.push(n);
+      }
+      return order;
+    }
+
+    // ---------- geometry & metrics ----------
+    function _orient(ax, ay, bx, by, cx, cy){
+      var v = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+      return (v > 0) ? 1 : (v < 0 ? -1 : 0);
+    }
+    function _properSegIntersect(a, b, c, d){
+      var o1 = _orient(a.x, a.y, b.x, b.y, c.x, c.y);
+      var o2 = _orient(a.x, a.y, b.x, b.y, d.x, d.y);
+      var o3 = _orient(c.x, c.y, d.x, d.y, a.x, a.y);
+      var o4 = _orient(c.x, c.y, d.x, d.y, b.x, b.y);
+      return (o1 !== o2) && (o3 !== o4);
+    }
+    function countCrossings(comp, rcMap){
+      var edges = comp.edges();
+      var xy = function(id){ var rc = rcMap[id]; return {x: rc.c, y: rc.r}; };
+      var m = 0;
+      for (var i=0; i<edges.length; i++){
+        var e1 = edges[i];
+        var s1 = e1.source().id(), t1 = e1.target().id();
+        var p1 = xy(s1), q1 = xy(t1);
+        for (var j=i+1; j<edges.length; j++){
+          var e2 = edges[j];
+          var s2 = e2.source().id(), t2 = e2.target().id();
+          if (s1===s2 || s1===t2 || t1===s2 || t1===t2) continue;
+          var p2 = xy(s2), q2 = xy(t2);
+          if (_properSegIntersect(p1, q1, p2, q2)) m++;
+        }
+      }
+      return m;
+    }
+    function wirelengthCost(comp, rcMap){
+      var edges = comp.edges();
+      var cost = 0;
+      for (var i=0; i<edges.length; i++){
+        var e = edges[i]; var s = e.source().id(); var t = e.target().id();
+        var ps = rcMap[s], pt = rcMap[t];
+        if (!ps || !pt) continue;
+        cost += Math.abs(ps.r - pt.r) + Math.abs(ps.c - pt.c);
+      }
+      return cost;
+    }
+    function aspectOk(rows, cols, maxAR){
+      if (rows <= 0 || cols <= 0) return false;
+      var longSide = Math.max(rows, cols), shortSide = Math.min(rows, cols);
+      return (longSide / shortSide) <= (maxAR || 1.5);
+    }
+    function candidateGridShapes(n, maxAR){
+      maxAR = maxAR || 1.5;
+      var out = [];
+      var s = Math.ceil(Math.sqrt(n));
+      function tryPush(r, c){
+        if (r < 1 || c < 1) return;
+        if (!aspectOk(r, c, maxAR)) return;
+        if (r*c < n) return;
+        out.push({rows:r, cols:c});
+      }
+      for (var d=-3; d<=3; d++){
+        var cols = Math.max(1, s + d);
+        var rows = Math.ceil(n / cols);
+        tryPush(rows, cols);
+      }
+      for (var k=1; k<=Math.min(10, n); k++){
+        tryPush(Math.ceil(n / k), k);
+        tryPush(k, Math.ceil(n / k));
+      }
+      var seen = {}, res = [];
+      for (var i=0; i<out.length; i++){
+        var key = out[i].rows + 'x' + out[i].cols;
+        if (!seen[key]){ seen[key] = true; res.push(out[i]); }
+      }
+      res.sort(function(a,b){
+        var ra = Math.max(a.rows,a.cols)/Math.min(a.rows,a.cols);
+        var rb = Math.max(b.rows,b.cols)/Math.min(b.rows,b.cols);
+        if (ra !== rb) return ra - rb;
+        return (a.rows*a.cols) - (b.rows*b.cols);
+      });
+      return res;
+    }
+    function centerFirstCells(rows, cols, snake){
+      var cells = [];
+      var cr = (rows - 1) / 2.0, cc = (cols - 1) / 2.0;
+      for (var r=0; r<rows; r++){
+        for (var c=0; c<cols; c++){
+          var cc2 = c;
+          if (snake && (r % 2 === 1)) cc2 = (cols - 1) - c;
+          var dr = r - cr, dc = cc2 - cc;
+          var d2 = dr*dr + dc*dc;
+          cells.push({ r:r, c:cc2, d:d2 });
+        }
+      }
+      cells.sort(function(a,b){
+        if (a.d !== b.d) return a.d - b.d;
+        if (a.r !== b.r) return a.r - b.r;
+        return a.c - b.c;
+      });
+      return cells;
+    }
+
+    // ---------- rings ----------
+    function ringCells(rows, cols, layer){
+      var r0 = layer, c0 = layer, r1 = rows - 1 - layer, c1 = cols - 1 - layer;
+      if (r0 > r1 || c0 > c1) return [];
+      if (r0 === r1 && c0 === c1) return [{r:r0, c:c0}];
+      var cells = [];
+      for (var c=c0; c<=c1; c++) cells.push({r:r0, c:c});         // top
+      for (var r=r0+1; r<=r1; r++) cells.push({r:r, c:c1});       // right
+      if (r1 > r0) for (var c2=c1-1; c2>=c0; c2--) cells.push({r:r1, c:c2}); // bottom
+      if (c1 > c0) for (var r2=r1-1; r2>r0; r2--) cells.push({r:r2, c:c0});  // left
+      return cells;
+    }
+    function allRings(rows, cols){
+      var totalLayers = Math.ceil(Math.min(rows, cols) / 2);
+      var rings = [];
+      for (var L=0; L<totalLayers; L++){
+        var rc = ringCells(rows, cols, L);
+        if (!rc.length) break;
+        rings.push(rc);
+      }
+      return rings;
+    }
+    // Variants for the OUTER ring only (we’ll add inner rings as needed)
+    function outerRingVariants(rows, cols){
+      var outer = ringCells(rows, cols, 0);
+      function reverse(arr){ var a=arr.slice(0); a.reverse(); return a; }
+      function rotateToCorner(ring, corner){
+        var idx = 0;
+        for (var i=0; i<ring.length; i++){
+          if (corner(ring[i])){ idx=i; break; }
+        }
+        return ring.slice(idx).concat(ring.slice(0, idx));
+      }
+      var isTL = function(p){ return p.r===0 && p.c===0; };
+      var isTR = function(p){ return p.r===0 && p.c===cols-1; };
+      var isBR = function(p){ return p.r===rows-1 && p.c===cols-1; };
+      var isBL = function(p){ return p.r===rows-1 && p.c===0; };
+
+      // build several outer ring traversals
+      var v = [];
+      v.push(outer.slice(0));                 // CW from TL
+      v.push(reverse(outer));                 // CCW from TL
+      v.push(rotateToCorner(outer, isTR));    // start TR
+      v.push(rotateToCorner(outer, isBR));    // start BR
+      v.push(rotateToCorner(outer, isBL));    // start BL
+      v.push(reverse(rotateToCorner(outer, isTR)));
+      v.push(reverse(rotateToCorner(outer, isBR)));
+      v.push(reverse(rotateToCorner(outer, isBL)));
+      return v;
+    }
+    // For a shape and terminal count, build boundary+interior plans
+    function boundaryPlans(rows, cols, terminalsCount, snake){
+      var variants = outerRingVariants(rows, cols);
+      var rings = allRings(rows, cols);
+
+      // all cells in center-first order for interior derivation
+      var allCellsCF = centerFirstCells(rows, cols, !!snake);
+
+      var plans = [];
+      for (var vi=0; vi<variants.length; vi++){
+        var boundary = [];
+        var needed = terminalsCount;
+        var usedKey = {};
+
+        // outer ring as per variant
+        var outer = variants[vi];
+        boundary = boundary.concat(outer);
+        for (var b=0; b<boundary.length; b++) usedKey[ boundary[b].r + ':' + boundary[b].c ] = true;
+
+        // If terminals don’t fit on outer ring, add inner rings until they fit
+        var L = 1;
+        while (boundary.length < needed && L < rings.length){
+          var ring = rings[L];
+          for (var r=0; r<ring.length; r++){
+            var cell = ring[r];
+            var key = cell.r + ':' + cell.c;
+            if (!usedKey[key]){
+              boundary.push(cell);
+              usedKey[key] = true;
+              if (boundary.length >= needed) break;
+            }
+          }
+          L++;
+        }
+
+        // interior = all cells minus boundary (center-first)
+        var interior = allCellsCF.filter(function(cell){
+          return !usedKey[cell.r + ':' + cell.c];
+        });
+
+        plans.push({ boundary: boundary, interior: interior });
+      }
+      return plans;
+    }
+
+    // ---------- swap optimizer with deadline ----------
+    function improveBySwapsCrossingAware(comp, rcMap, idOrder, rows, cols, maxRounds, windowSize, deadlineMs){
+      if (!idOrder || idOrder.length < 3) return;
+      maxRounds = (typeof maxRounds==='number') ? maxRounds : 2;
+      windowSize = (typeof windowSize==='number') ? windowSize : 6;
+      for (var round=0; round<maxRounds; round++){
+        var improved = false;
+        for (var i=0; i<idOrder.length-1; i++){
+          var now = (performance && performance.now) ? performance.now() : Date.now();
+          if (now > deadlineMs) return;
+          for (var j=i+1; j<Math.min(idOrder.length, i+1+windowSize); j++){
+            var idA = idOrder[i], idB = idOrder[j];
+            var posA = rcMap[idA], posB = rcMap[idB];
+            if (!posA || !posB) continue;
+
+            var oldX = countCrossings(comp, rcMap);
+            if (oldX === 0) return;
+            var oldW = wirelengthCost(comp, rcMap);
+
+            rcMap[idA] = posB; rcMap[idB] = posA;
+            var newX = countCrossings(comp, rcMap);
+            var accept = false;
+            if (newX < oldX) accept = true;
+            else if (newX === oldX){
+              var newW = wirelengthCost(comp, rcMap);
+              if (newW < oldW) accept = true;
+            }
+            if (accept){ improved = true; }
+            else { rcMap[idA] = posA; rcMap[idB] = posB; }
+          }
+        }
+        if (!improved) break;
+      }
+    }
+
+    // ---------- classifiers ----------
+    function isSimpleCycle(comp){
+      var nodes = comp.nodes(), edges = comp.edges();
+      if (nodes.length < 3) return false;
+      if (edges.length !== nodes.length) return false;
+      for (var i=0; i<nodes.length; i++){
+        if (nodes[i].degree() !== 2) return false;
+      }
+      return true;
+    }
+    function terminalsOf(comp){
+      var out = [];
+      var nodes = comp.nodes();
+      for (var i=0; i<nodes.length; i++){
+        if (nodes[i].degree() === 1) out.push(nodes[i]);
+      }
+      return out;
+    }
+
+    // ---------- simple cycle: guaranteed 0 crossings on perimeter ----------
+    function perimeterDimsFor(n, maxAR){
+      maxAR = maxAR || 1.5;
+      var best = null;
+      for (var r=2; r<=n; r++){
+        for (var c=2; c<=n; c++){
+          var per = 2*(r + c) - 4;
+          if (per < n) continue;
+          if (!aspectOk(r, c, maxAR)) continue;
+          var area = r * c;
+          var score = (Math.max(r,c)/Math.min(r,c)) + area/10000;
+          if (!best || score < best.score) best = {rows:r, cols:c, score:score};
+        }
+      }
+      if (!best) best = {rows:Math.max(2, Math.floor(n/2)), cols:Math.max(2, Math.ceil(n/2))};
+      return { rows: best.rows, cols: best.cols };
+    }
+    function perimeterCells(rows, cols){
+      var cells = [];
+      for (var c=0; c<cols; c++) cells.push({r:0, c:c});
+      for (var r=1; r<rows; r++) cells.push({r:r, c:cols-1});
+      for (var c=cols-2; c>=0; c--) cells.push({r:rows-1, c:c});
+      for (var r=rows-2; r>=1; r--) cells.push({r:r, c:0});
+      return cells;
+    }
+    function perimeterLayoutForCycle(comp, orderedNodes){
+      var n = orderedNodes.length;
+      var dims = perimeterDimsFor(n, 1.5);
+      var slots = perimeterCells(dims.rows, dims.cols);
+      // rotate to put "hub" near a corner
+      var maxDeg = -1, hubIdx = 0;
+      for (var i=0; i<orderedNodes.length; i++){
+        var d = orderedNodes[i].degree();
+        if (d > maxDeg){ maxDeg = d; hubIdx = i; }
+      }
+      var rotated = orderedNodes.slice(hubIdx).concat(orderedNodes.slice(0, hubIdx));
+      var rcMap = {}, idOrder = [];
+      for (var k=0; k<n; k++){
+        var id = rotated[k].id();
+        idOrder.push(id);
+        rcMap[id] = { r: slots[k].r, c: slots[k].c };
+      }
+      return { rows: dims.rows, cols: dims.cols, rcMap: rcMap, idOrder: idOrder, snake:false,
+               crossings: 0, cost: wirelengthCost(comp, rcMap) };
+    }
+
+    // ---------- chooser (time-bounded) ----------
+    function chooseBestGridForComponent(comp, orderedNodes, arWeight, startTimeMs, budgetMs){
+      var now = function(){ return (performance && performance.now) ? performance.now() : Date.now(); };
+      var deadline = (startTimeMs || now()) + (budgetMs || 4800);
+
+      var n = orderedNodes.length;
+
+      // small components (3–4)
+      if (n === 3 || n === 4){
+        var horiz = (smallLoopOrientation === 'horizontal');
+        var rows = horiz ? 1 : n;
+        var cols = horiz ? n : 1;
+        if (!aspectOk(rows, cols, 1.5)){
+          if (rows > cols) cols = Math.max(1, Math.ceil(rows / 1.5));
+          else rows = Math.max(1, Math.ceil(cols / 1.5));
+        }
+        var seq = [];
+        if (n === 3){
+          seq = horiz ? [ {r:0,c:1}, {r:0,c:0}, {r:0,c:2} ]
+                      : [ {r:1,c:0}, {r:0,c:0}, {r:2,c:0} ];
+        } else { // 4
+          seq = horiz ? [ {r:0,c:1}, {r:0,c:2}, {r:0,c:0}, {r:0,c:3} ]
+                      : [ {r:1,c:0}, {r:2,c:0}, {r:0,c:0}, {r:3,c:0} ];
+        }
+        var rcMap = {}; var idOrder = [];
+        for (var k=0; k<n; k++){ var id=orderedNodes[k].id(); idOrder.push(id); rcMap[id] = { r:seq[k].r, c:seq[k].c }; }
+        improveBySwapsCrossingAware(comp, rcMap, idOrder, rows, cols, 1, 3, deadline);
+        var crosses = countCrossings(comp, rcMap);
+        return { rows:rows, cols:cols, snake:false, rcMap:rcMap, crossings:crosses, cost: wirelengthCost(comp, rcMap) };
+      }
+
+      // pure cycle
+      if (isSimpleCycle(comp)){
+        return perimeterLayoutForCycle(comp, orderedNodes);
+      }
+
+      var terms = terminalsOf(comp);
+      var terminalCount = terms.length;
+      var termIds = {};
+      for (var ti=0; ti<terms.length; ti++) termIds[ terms[ti].id() ] = true;
+
+      var best = null;
+      var shapes = candidateGridShapes(n, 1.5);
+
+      for (var sIdx=0; sIdx<shapes.length; sIdx++){
+        if (now() > deadline) break;
+
+        var sh = shapes[sIdx];
+        var rows = sh.rows, cols = sh.cols;
+
+        for (var snakeFlag=0; snakeFlag<2; snakeFlag++){
+          if (now() > deadline) break;
+
+          var plans = boundaryPlans(rows, cols, terminalCount, snakeFlag===1);
+          for (var pi=0; pi<plans.length; pi++){
+            if (now() > deadline) break;
+
+            var boundary = plans[pi].boundary;
+            var interior = plans[pi].interior;
+
+            // safety: ensure we have at least n cells
+            if ((boundary.length + interior.length) < n) continue;
+
+            var rcMap = {}; var idOrder = [];
+
+            // order: terminals first (any order), then higher-degree first
+            var nodes = comp.nodes().slice(0);
+            nodes.sort(function(a,b){
+              var da = a.degree(), db = b.degree();
+              var aTerm = (da===1), bTerm = (db===1);
+              if (aTerm && !bTerm) return -1;
+              if (!aTerm && bTerm) return 1;
+              return db - da;
+            });
+
+            // Assign: terminals to boundary slots first, others to interior
+            var bi = 0, ii = 0;
+            for (var idx=0; idx<nodes.length; idx++){
+              var node = nodes[idx];
+              var id = node.id();
+              idOrder.push(id);
+              if (termIds[id]){
+                // terminal -> boundary (or interior if boundary exhausted)
+                if (bi < boundary.length){
+                  rcMap[id] = { r: boundary[bi].r, c: boundary[bi].c }; bi++;
+                } else {
+                  rcMap[id] = { r: interior[ii].r, c: interior[ii].c }; ii++;
+                }
+              } else {
+                // non-terminal -> interior (fallback to boundary if somehow interior done)
+                if (ii < interior.length){
+                  rcMap[id] = { r: interior[ii].r, c: interior[ii].c }; ii++;
+                } else {
+                  rcMap[id] = { r: boundary[bi].r, c: boundary[bi].c }; bi++;
+                }
+              }
+            }
+
+            // local improvement with time guard
+            var deadlineMs = deadline;
+            improveBySwapsCrossingAware(comp, rcMap, idOrder, rows, cols, 2, 6, deadlineMs);
+
+            var x = countCrossings(comp, rcMap);
+            var w = wirelengthCost(comp, rcMap);
+            var score = (x * 1e6) + w;
+
+            if (!best || score < best.score){
+              best = { rows: rows, cols: cols, snake:(snakeFlag===1), rcMap: rcMap,
+                       crossings: x, cost: w, score: score };
+              if (x === 0) return best; // early exit
+            }
+          }
+        }
+      }
+
+      // Fallback (should not hit): near-square grid center-first
+      if (!best){
+        var side = Math.ceil(Math.sqrt(n));
+        var rows = side, cols = side;
+        while (!aspectOk(rows, cols, 1.5)){ cols++; }
+        var cells = centerFirstCells(rows, cols, false);
+        var rcMap = {}, idOrder = [];
+        for (var i=0; i<n; i++){
+          var id = orderedNodes[i].id();
+          idOrder.push(id);
+          rcMap[id] = { r: cells[i].r, c: cells[i].c };
+        }
+        best = { rows: rows, cols: cols, snake:false, rcMap: rcMap,
+                 crossings: countCrossings(comp, rcMap), cost: wirelengthCost(comp, rcMap), score: 1e12 };
+      }
+      return best;
+    }
+
+    // ---------- pack + apply ----------
+    function packComponentsRects(compsInfo, viewportW, viewportH, margin, gap){
+      var x = margin, y = margin, rowH = 0;
+      var maxW = Math.max(300, viewportW - margin*2);
+      for (var i=0; i<compsInfo.length; i++){
+        var ci = compsInfo[i];
+        var w = ci.boxW, h = ci.boxH;
+        if (x + w > maxW + margin){
+          x = margin;
+          y += rowH + gap;
+          rowH = 0;
+        }
+        ci.boxX = x;
+        ci.boxY = y;
+        x += w + gap;
+        if (h > rowH) rowH = h;
+      }
+    }
+
+    function rectangularizeLoops(opts){
+      if (!cy) { alert('Please draw the graph first.'); return; }
+
+      opts = opts || {};
+      var padding  = (typeof opts.padding  === 'number') ? opts.padding  : 45;
+      var stepBase = (typeof opts.stepBase === 'number') ? opts.stepBase : 90;
+      var gap      = (typeof opts.gap      === 'number') ? opts.gap      : 90;
+      var margin   = (typeof opts.margin   === 'number') ? opts.margin   : 50;
+      var animate  = (typeof opts.animate  === 'boolean') ? opts.animate  : true;
+      var duration = (typeof opts.duration === 'number') ? opts.duration : 650;
+      var arWeight = (typeof opts.arWeight === 'number') ? opts.arWeight : 10 * (cy ? cy.nodes().length : 50);
+
+      // Global time budget (~5s)
+      var t0 = (performance && performance.now) ? performance.now() : Date.now();
+      var budgetMs = 4800;
+
+      // Which components
+      var selected = cy.$('node:selected');
+      var allComps = cy.elements().components();
+      var comps = [];
+      if (selected && selected.length > 0) {
+        for (var ci = 0; ci < allComps.length; ci++) {
+          var compNodes = allComps[ci].nodes();
+          var inter = compNodes.intersect(selected);
+          if (inter && inter.length > 0) comps.push(allComps[ci]);
+        }
+      } else {
+        comps = allComps;
+      }
+      if (!comps || comps.length === 0) return;
+
+      var viewportW = cy.width();
+      var viewportH = cy.height();
+
+      // Largest first
+      comps = comps.sort(function(a,b){ return b.nodes().length - a.nodes().length; });
+
+      var plan = [];
+      for (var i=0; i<comps.length; i++){
+        var comp = comps[i];
+        var nodes = comp.nodes();
+        if (!nodes || nodes.length === 0) continue;
+
+        var ordered = bfsOrderWithin(nodes);
+        var best = chooseBestGridForComponent(comp, ordered, arWeight, t0, budgetMs);
+        if (!best) continue;
+
+        var density = Math.max(1, comp.edges().length / Math.max(1, nodes.length));
+        var stepAdj = 1 + Math.min(0.6, 0.10 * density);
+        var base = stepBase * stepAdj;
+
+        var colSpan = Math.max(1, best.cols - 1);
+        var rowSpan = Math.max(1, best.rows - 1);
+        var sx = base * Math.sqrt(rowSpan / colSpan);
+        var sy = base * Math.sqrt(colSpan / rowSpan);
+
+        var innerW = (best.cols > 1) ? colSpan * sx : 0;
+        var innerH = (best.rows > 1) ? rowSpan * sy : 0;
+
+        plan.push({
+          comp: comp,
+          ordered: ordered,
+          best: best,
+          stepX: sx,
+          stepY: sy,
+          boxW: innerW + padding*2,
+          boxH: innerH + padding*2
+        });
+      }
+
+      packComponentsRects(plan, viewportW, viewportH, margin, gap);
+
+      var targetPositions = {};
+      for (var p=0; p<plan.length; p++){
+        var pi = plan[p];
+        var startX = pi.boxX + padding;
+        var startY = pi.boxY + padding;
+        var rows = pi.best.rows, cols = pi.best.cols, sx = pi.stepX, sy = pi.stepY;
+        var nlist = pi.ordered;
+        var rcMap = pi.best.rcMap;
+
+        for (var k=0; k<nlist.length; k++){
+          var id = nlist[k].id();
+          var rc = rcMap[id];
+          var x = startX + rc.c * sx;
+          var y = startY + rc.r * sy;
+          targetPositions[id] = { x:x, y:y };
+        }
+      }
+
+      cy.batch(function(){
+        for (var id in targetPositions) {
+          if (!targetPositions.hasOwnProperty(id)) continue;
+          cy.getElementById(id).position(targetPositions[id]);
+        }
+      });
+
+      if (animate) {
+        cy.animate({ fit: { eles: cy.elements(), padding: 60 } }, { duration: duration });
+      }
+    }
+
+    /* -----------------------------
+     * Export
+     * ---------------------------*/
+    function dataURItoBlob(dataURI){
+      var parts = dataURI.split(',');
+      var mime = parts[0].match(/:(.*?);/)[1];
+      var byteString = atob(parts[1]);
+      var ab = new ArrayBuffer(byteString.length);
+      var ia = new Uint8Array(ab);
+      for (var i=0; i<byteString.length; i++) ia[i] = byteString.charCodeAt(i);
+      return new Blob([ab], { type: mime });
+    }
+    function exportPng(){ if (!cy) return; var dataUrl = cy.png({ full:true, scale:2 }); var blob = dataURItoBlob(dataUrl); saveAs(blob, 'Network_Export.png'); }
+    function exportPdf(){ if (!cy) return; var dataUrl = cy.png({ full:true, scale:1.5 }); pdfMake.createPdf({ content:[{ image:dataUrl, width:500 }] }).download('SLD_Report.pdf'); }
+
+    /* -----------------------------
+     * Project selection & preload
+     * ---------------------------*/
+    function onProjectSelect(){
+      var pName = document.getElementById('projectList').value; activeProjectName = pName;
+      var cached = projectDataCache[pName];
+      if (!cached || !cached.nodes || cached.nodes.length===0 || !cached.edges || cached.edges.length===0){
+        setStatus('File mismatch (Check names) ❌'); return;
+      }
+      activeProjectData.nodes = cached.nodes; activeProjectData.edges = cached.edges;
+      renderGridFilters();
+      fillGridForFeederSearchSelect();
+      document.getElementById('drawBtn').disabled = false;
+      setStatus(pName + ' Ready  ✅');
+    }
+
+    document.addEventListener('DOMContentLoaded', function(){
+      // Grid filter
+      document.getElementById('gridSearchInput').addEventListener('input', filterGridList);
+      document.getElementById('selectAllGrids').addEventListener('click', toggleSelectAllHandler);
+      document.getElementById('applyFilterBtn').addEventListener('click', applyFilter);
+      document.getElementById('resetFilterBtn').addEventListener('click', resetFilter);
+
+      // Feeder search
+      document.getElementById('gridForFeederSearch').addEventListener('change', populateFeederList);
+      document.getElementById('searchFeederBtn').addEventListener('click', searchFeeder);
+
+      // Graph & export
+      document.getElementById('drawBtn').addEventListener('click', drawGraph);
+      document.getElementById('exportPngBtn').addEventListener('click', exportPng);
+      document.getElementById('exportPdfBtn').addEventListener('click', exportPdf);
+
+      // Orientation toggle for 3–4 feeders
+      var radios = document.querySelectorAll('input[name="smallLoopOrient"]');
+      for (var i=0; i<radios.length; i++){
+        radios[i].addEventListener('change', function(e){
+          smallLoopOrientation = e.target.value;
+        });
+      }
+
+      // Rect Loop action
+      document.getElementById('rectifyLoopsBtn').addEventListener('click', function(){
+        rectangularizeLoops({
+          padding: 50,
+          stepBase: 90,
+          gap: 100,
+          margin: 60,
+          animate: true,
+          duration: 650,
+          arWeight: 10 * (cy ? cy.nodes().length : 50) // stronger AR balance for bigger graphs
+        });
+      });
+
+      // Project selection
+      document.getElementById('projectList').addEventListener('change', onProjectSelect);
+
+      // Preload projects & CSVs
+      var preloadStatus = document.getElementById('preloadStatus');
+      var projectList = document.getElementById('projectList');
+
+      fetchTextOrThrow('projects.csv').then(function(projectsCSV){
+        var parsed = parseCSVToArray(projectsCSV);
+        var projectNames = [];
+        for (var i=1; i<parsed.length; i++){ if (parsed[i] && parsed[i][0]) projectNames.push(norm(parsed[i][0])); }
+        projectList.innerHTML = '<option value="" disabled selected>Select a Project...</option>';
+        for (var p=0; p<projectNames.length; p++){
+          var name = projectNames[p]; var opt = document.createElement('option'); opt.value = name; opt.text = name; projectList.add(opt);
+        }
+        setStatus('Data Loaded ✅');
+        preloadStatus.innerText = 'Preloading ' + projectNames.length + ' project(s)...';
+
+        var idx = 0;
+        function preloadNext(){
+          if (idx >= projectNames.length){ preloadStatus.innerText = ' Ready ✅'; return; }
+          var pName = projectNames[idx++];
+          Promise.all([ fetchTextOrThrow(pName+'nodes.csv'), fetchTextOrThrow(pName+'edges.csv') ])
+            .then(function(res){
+              projectDataCache[pName] = { nodes: parseCSVToArray(res[0]), edges: parseCSVToArray(res[1]) };
+              preloadStatus.innerText = 'Preloaded ' + idx + '/' + projectNames.length + ': "' + pName + '" ✅';
+              preloadNext();
+            })
+            .catch(function(err){
+              console.error('Preload error for project "'+pName+'":', err);
+              projectDataCache[pName] = { nodes: [], edges: [] };
+              preloadStatus.innerText = 'Preloaded ' + (idx-1) + '/' + projectNames.length + ' (some projects missing files) ⚠️';
+              preloadNext();
+            });
+        }
+        preloadNext();
+      }).catch(function(err){
+        console.error('Fetch Error:', err);
+      });
+    });
+  </script>
+</body>
+</html>
