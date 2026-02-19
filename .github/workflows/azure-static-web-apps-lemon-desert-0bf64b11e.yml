@@ -28,10 +28,10 @@ jobs:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: "upload"
           ###### REPOSITORY CONFIGURATION ######
-          app_location: "/"          # Where your index.html is located
-          api_location: ""           # Must stay empty
-          output_location: "/"       # Set to root to ensure all files are captured
-          skip_app_build: true       # Bypasses the Oryx build error
+          app_location: "/"          # Root of your repo
+          api_location: ""           # Keep empty
+          output_location: ""        # IMPORTANT: Keep empty to use root directly
+          skip_app_build: true       # Tells Azure: "My files are already ready"
           ###### END CONFIGURATION ######
 
   close_pull_request_job:
