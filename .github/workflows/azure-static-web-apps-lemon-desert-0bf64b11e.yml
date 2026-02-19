@@ -30,7 +30,7 @@ jobs:
           ###### THIS SECTION IS NOW SET FOR YOUR ROOT FILES ######
           app_location: "/" 
           api_location: "" 
-          output_location: "" 
+          output_location: "." 
           skip_app_build: true  # This stops the "Could not detect language" error
           ###### END CONFIGURATION ######
 
@@ -45,3 +45,4 @@ jobs:
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_LEMON_DESERT_0BF64B11E }}
           action: "close"
+
