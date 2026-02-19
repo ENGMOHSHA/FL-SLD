@@ -27,11 +27,11 @@ jobs:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_LEMON_DESERT_0BF64B11E }}
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: "upload"
-          ###### THIS SECTION IS NOW SET FOR YOUR ROOT FILES ######
-          app_location: "/" 
-          api_location: "" 
-          output_location: "." 
-          skip_app_build: true  # This stops the "Could not detect language" error
+          ###### REPOSITORY CONFIGURATION ######
+          app_location: "/"          # Where your index.html is located
+          api_location: ""           # Must stay empty
+          output_location: "/"       # Set to root to ensure all files are captured
+          skip_app_build: true       # Bypasses the Oryx build error
           ###### END CONFIGURATION ######
 
   close_pull_request_job:
@@ -45,4 +45,3 @@ jobs:
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_LEMON_DESERT_0BF64B11E }}
           action: "close"
-
